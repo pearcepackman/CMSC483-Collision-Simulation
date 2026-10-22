@@ -17,9 +17,9 @@ Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.t
 
 ## Git: hard rule
 
-**IMPORTANT: Never change git or pull-request state unless the user asks for that specific action in their current message.** No commits, staging, branches, checkouts/switches, merges, rebases, resets, stashes, tags, pushes or pulls, and no creating, editing, merging, closing or commenting on PRs (including through `gh api`). Approving a plan, a review finding, or a skill's output is **not** permission; ask separately. Instead, say what you'd run and let the user run it or tell you to.
+**IMPORTANT: Never change git or pull-request state unless the user asks for that specific action in their current message.** No commits, staging, branches, checkouts/switches, merges, rebases, resets, stashes, tags, pushes or pulls, and no creating, merging or closing PRs (including through `gh api`). Approving a plan, a review finding, or a skill's output is **not** permission; ask separately. Instead, say what you'd run and let the user run it or tell you to.
 
-Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fetch`; `gh pr view`, `gh run`, `gh issue view/list`), and GitHub planning: creating and editing issues, milestones and labels, and commenting on issues. `.claude/settings.json` backs this up with permission prompts.
+Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fetch`; `gh pr view`, `gh run`, `gh issue view/list`), GitHub planning: creating and editing issues, milestones and labels, and commenting on issues; and **PR descriptions and comments** on PRs the user opened: keep each description current with one `Closes #N` line per issue it finishes plus a short summary, and comment when useful. `.claude/settings.json` backs this up with permission prompts.
 
 ## Rules
 
@@ -30,5 +30,5 @@ Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fet
 - Every OpenMP parallel region uses `default(none)`, so each variable is explicitly shared or private.
 - Compare backends with relative tolerances, never `==`, and only over a few steps (gravity is chaotic).
 - Tests that need a GPU get the CTest label `gpu`.
-- Keep each PR to one milestone task. Run `/pre-push` before pushing.
+- Keep each PR to one feature; it may close several related issues in the same milestone (one `Closes #N` line per issue). Run `/pre-push` before pushing.
 - Write plain C-style C++: structs, arrays, free functions. No clever templates.

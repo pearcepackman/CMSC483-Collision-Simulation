@@ -24,7 +24,7 @@ Sort the changed files into: **physics/engine** (`src/`), **parallel code** (any
 
 Tell the user in 2–3 lines what's in scope. If the branch is `main`, warn that `main` should be protected and suggest a branch name.
 
-**Find the issue(s) this work is for:** a number at the start of the branch name (`6-module-interfaces`), else `Closes #N` lines in the branch's open PR (`gh pr view --json body -q .body`), else ask the user. Load each with `gh issue view N`, including any plan posted as a comment by `/plan-issue`. Phase 3 checks the diff against them.
+**Find the issue(s) this work is for.** A PR may close several issues (see `CLAUDE.md`), so collect all of: a number at the start of the branch name (`6-module-interfaces`), every `Closes #N` / `Fixes #N` line in the branch's open PR (`gh pr view --json body -q .body`), and any issue the user named. If none turn up, ask the user. Load each with `gh issue view N --comments`, including any plan posted by `/plan-issue`. Phase 3 checks the diff against all of them together.
 
 ## Phase 2: Review
 
@@ -140,4 +140,6 @@ Fixed: <summary>
 - Summary is **around 50 characters**, specific, no trailing period (e.g. `Added: OpenMP gravity backend with match test`).
 - Put it in a code block so it's easy to copy.
 
-Don't commit, push, or touch branches or PRs (see the git rule in `CLAUDE.md`). The user does all git work themselves.
+**PR description:** if the branch has an open PR, update its description with `gh pr edit --body-file` (allowed by the git rule in `CLAUDE.md`): one `Closes #N` line per issue from Phase 1 that this work finishes, then a short summary of what's done and anything still in progress. Keep any text the user wrote. If there's no PR yet, give the description for the user to paste when they open it.
+
+Don't commit, push, touch branches, or create/merge/close PRs. The user does that.
