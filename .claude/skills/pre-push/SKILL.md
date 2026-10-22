@@ -1,6 +1,7 @@
 ---
 name: pre-push
-description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review plus an adversarial review, gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, runs the local equivalent of CI, and proposes a commit message. Use when the user says /pre-push, "ready to push", "check before I push", or similar.
+description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review (plus an adversarial review for parallel/physics code, or on request), gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, runs the local equivalent of CI, and proposes a commit message. Use when the user says /pre-push, "ready to push", "check before I push", or similar.
+argument-hint: "[adversarial | no-adversarial]"
 ---
 
 # Pre-push gate
@@ -25,9 +26,21 @@ Tell the user in 2–3 lines what's in scope. If the branch is `main`, warn that
 
 ## Phase 2: Review
 
+Arguments: `$ARGUMENTS`
+
 **Trivial diff** (docs-only, or under ~30 changed lines with no parallel code): review it yourself and skip the subagents.
 
-**Otherwise**, launch two subagents **in parallel, in a single message** (Agent tool, `general-purpose`). Give each the base SHA, the file list, and tell it to read the full diff with `git diff $BASE` plus untracked files. Each returns findings as: severity (`blocker` / `should-fix` / `nit`), `file:line`, the problem, a concrete failure scenario, and a proposed fix.
+**Otherwise**, launch Agent A. Decide whether to also launch Agent B (the adversarial reviewer is slow and uses a lot of usage):
+
+| Arguments contain | Agent B |
+|---|---|
+| `adversarial` | Always run it |
+| `no-adversarial` | Never run it |
+| neither (default) | Run it only if the diff touches **parallel code** (`#pragma omp`, `.cu`/`.cuh`, atomics) or **physics** in `src/` (gravity, contact, integrator, planet init). Skip it for setup, build, CI, docs, scripts and diagnostics-only changes. |
+
+Say in one line whether Agent B is running and why (e.g. "Adversarial: skipped, no parallel/physics code; run `/pre-push adversarial` to force it").
+
+When both run, launch them **in parallel, in a single message** (Agent tool, `general-purpose`). Give each the base SHA, the file list, and tell it to read the full diff with `git diff $BASE` plus untracked files. Each returns findings as: severity (`blocker` / `should-fix` / `nit`), `file:line`, the problem, a concrete failure scenario, and a proposed fix.
 
 **Agent A: Senior reviewer.** Review like a senior HPC/C++ engineer. Checklist:
 - **OpenMP:** every shared write is safe (reduction, private, or per-thread buffer); `default(none)` used; no hidden shared temporaries; scheduling choice makes sense; no false sharing on hot arrays.
@@ -99,10 +112,10 @@ Run in this order and stop at the first failure:
 4. **ASan/UBSan:** `asan` preset build + `ctest -LE gpu`.
 5. **TSan** (Linux only, only if the diff touches parallel code): `tsan` preset with `TSAN_OPTIONS=ignore_noninstrumented_modules=1`, `OMP_NUM_THREADS=4`.
 6. **CUDA:** if `nvcc` exists, build the `cuda` preset. If `nvidia-smi` also works, run `ctest -L gpu`. Otherwise say it's skipped (CI compiles it).
-7. **Smoke test:** the tiny collision run (see CI `smoke` job). Fail on NaN or energy drift.
+7. **Smoke test:** the tiny collision run (see CI `smoke` job). Fail on NaN or energy drift. Until the `smoke` job exists (milestone 2), report this step as skipped (N/A).
 8. **Python:** if `scripts/` changed, at least `python3 -m py_compile` on the changed scripts.
 
-Platform rules: on macOS (`uname` = Darwin), skip TSan and CUDA and say so. If OpenMP isn't found, set `OpenMP_ROOT=$(brew --prefix)/opt/libomp`. Report a skipped step as skipped. Never report it as passed.
+Platform rules: on macOS (`uname` = Darwin), skip TSan and CUDA and say so. If OpenMP isn't found, set `OpenMP_ROOT=$(brew --prefix)/opt/libomp`. Apple clang 17 on macOS 26 has an ASan runtime that deadlocks at startup, even on an empty `main`. On macOS, first compile and run a trivial `-fsanitize=address` program with a 5-second timeout. If it hangs, skip the ASan step and report it as skipped because of the toolchain (CI covers it on Linux). Run every test command with a timeout so a hang can't stall the gate. macOS has no `timeout` command, so use `perl -e 'alarm shift; exec @ARGV' <seconds> <cmd...>` there, and `timeout <seconds> <cmd...>` on Linux. Report a skipped step as skipped. Never report it as passed.
 
 If a failure is caused by the diff, fix it and re-run from step 1. If it isn't caused by the diff, or fixing it means touching tolerances or constants, stop and tell the user.
 

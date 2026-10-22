@@ -32,7 +32,7 @@ For a web developer, the closest mapping is:
 | ESLint | `clang-tidy` + compiler warnings (`-Wall -Wextra -Werror`) |
 | `node_modules/`, `dist/` | `build/` (gitignored, safe to delete any time) |
 
-- **CMake ≥ 3.24**, **Ninja** generator (faster than Make, better parallel builds).
+- **CMake ≥ 3.25**, **Ninja** generator (faster than Make, better parallel builds).
 - **Presets** we'll define:
 
   | Preset | Compiler | Purpose |
@@ -41,7 +41,7 @@ For a web developer, the closest mapping is:
   | `release` | default | Benchmarks: `-O3 -march=native` |
   | `asan` | clang | Debug + AddressSanitizer + UBSan (memory bugs, UB) |
   | `tsan` | clang + libomp | ThreadSanitizer (data races in OpenMP code) |
-  | `cuda` | nvcc | `-DENABLE_CUDA=ON` |
+  | `cuda` | nvcc | `-DENABLE_CUDA=ON` (added with milestone 4) |
 
 - **GoogleTest** via `FetchContent`, pinned to **v1.17.0** (latest confirmed release; needs C++17). Pin a tag, never `main`.
 - Export `compile_commands.json` (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`) so editors (clangd / VS Code) understand the code.
@@ -61,7 +61,7 @@ brew install cmake ninja libomp
 export OpenMP_ROOT=$(brew --prefix)/opt/libomp   # Apple clang has no OpenMP; this points CMake at Homebrew's
 ```
 
-On macOS, `gcc` is actually Apple clang. There's no CUDA and no usable TSan for OpenMP code.
+On macOS, `gcc` is actually Apple clang. There's no CUDA and no usable TSan for OpenMP code. As of Apple clang 17 / macOS 26.6, **ASan deadlocks at startup** (even on an empty program), so the `asan` preset only works on Linux. UBSan alone works.
 
 ### Remote Linux box
 
@@ -88,7 +88,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so CUDA is c
 | `format` | `clang-format --dry-run --Werror` (pinned version) | Unformatted code |
 | `build-test` | Matrix of gcc and clang: build with `-Werror`, then `ctest -LE gpu` with `OMP_NUM_THREADS=1` **and** `4` | Compile errors, test failures, races that only show up with several threads |
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
-| `tsan` | clang + libomp (Archer), `TSAN_OPTIONS=ignore_noninstrumented_modules=1` | Data races in OpenMP loops. **Start as non-blocking** (`continue-on-error`) until we confirm it's clean, then make it required. |
+| `tsan` | clang + libomp (Archer), `TSAN_OPTIONS=ignore_noninstrumented_modules=1` | Data races in OpenMP loops. **Start as non-blocking** (`continue-on-error`) until we confirm it's clean, then make it required. Ubuntu's libomp isn't TSan-instrumented, so load Archer explicitly: `OMP_TOOL_LIBRARIES=/usr/lib/llvm-18/lib/libarcher.so` (check the path with `find /usr/lib -name libarcher.so`). Added with milestone 3. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
 | `cuda-compile` | Inside `nvidia/cuda:<ver>-devel-ubuntu24.04`, `-DENABLE_CUDA=ON`, explicit `CMAKE_CUDA_ARCHITECTURES` (CMake can't detect a GPU that isn't there) | CUDA syntax/type errors |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |

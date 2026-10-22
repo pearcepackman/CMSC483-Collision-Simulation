@@ -1,0 +1,27 @@
+# CLAUDE.md
+
+Planet collision N-body simulator (C++17, OpenMP, CUDA). The plan is [PLAN.md](PLAN.md); tooling decisions are in [docs/tooling.md](docs/tooling.md). Primary dev platform is Linux; macOS lacks CUDA and reliable TSan.
+
+## Commands
+
+```bash
+cmake --preset dev && cmake --build --preset dev     # configure + build
+ctest --preset dev                                    # tests (excludes `gpu` label)
+OMP_NUM_THREADS=4 ctest --preset dev                  # tests with threads
+cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # memory/UB checks
+cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # race checks (Linux)
+git ls-files '*.cpp' '*.hpp' '*.cu' '*.cuh' | xargs clang-format --dry-run --Werror
+```
+
+Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (pinned clang-format).
+
+## Rules
+
+- **Never delete or "optimize" `gravity_serial.cpp`.** It's the reference every other backend is tested against.
+- Every new backend or physics change needs a test, and all tests must pass before a commit.
+- Don't change physics constants or test tolerances just to make tests pass. Flag it instead.
+- Keep particle data in Struct-of-Arrays layout (`src/particles.hpp`).
+- Compare backends with relative tolerances, never `==`, and only over a few steps (gravity is chaotic).
+- Tests that need a GPU get the CTest label `gpu`.
+- Keep each PR to one milestone task. Run `/pre-push` before pushing.
+- Write plain C-style C++: structs, arrays, free functions. No clever templates.

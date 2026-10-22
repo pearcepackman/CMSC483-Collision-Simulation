@@ -1,0 +1,19 @@
+# Build output
+build/
+out/
+compile_commands.json
+
+# Simulation output (render locally, don't commit)
+frames/
+*.mp4
+*.gif
+bench/raw/
+
+# Python
+.venv/
+__pycache__/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,2 @@
+# Pinned so local formatting matches CI exactly.
+clang-format==22.1.8
