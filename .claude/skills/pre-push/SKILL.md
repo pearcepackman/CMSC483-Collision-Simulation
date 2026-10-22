@@ -24,6 +24,8 @@ Sort the changed files into: **physics/engine** (`src/`), **parallel code** (any
 
 Tell the user in 2–3 lines what's in scope. If the branch is `main`, warn that `main` should be protected and suggest a branch name.
 
+**Find the issue(s) this work is for:** a number at the start of the branch name (`6-module-interfaces`), else `Closes #N` lines in the branch's open PR (`gh pr view --json body -q .body`), else ask the user. Load each with `gh issue view N`, including any plan posted as a comment by `/plan-issue`. Phase 3 checks the diff against them.
+
 ## Phase 2: Review
 
 Arguments: `$ARGUMENTS`
@@ -63,6 +65,8 @@ Show a numbered table:
 |---|---|---|---|---|
 
 Under it, one line per item explaining the failure scenario in plain language. The user is new to C++/HPC, so briefly explain jargon (e.g. "false sharing: two threads writing neighbouring memory slow each other down").
+
+If an issue was found in Phase 1, add an **Issue coverage** table: each "Done when" box → done / missing / not checkable here (e.g. "reviewed by Kyle"), plus any changes outside the issue's scope or posted plan. Missing boxes and scope creep also go in the findings table as `should-fix`.
 
 Then ask: **"Which should I fix? Reply e.g. `all`, `1 3 4`, `all but 5`, or `none`."**
 

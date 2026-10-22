@@ -47,7 +47,11 @@ function(set_project_warnings target)
     endif()
 endfunction()
 
-add_library(sim_core src/diagnostics.cpp)
+# Every src/*.cpp except main.cpp goes into the core library, so new modules need no
+# CMake edits. CONFIGURE_DEPENDS re-checks the file list on each build.
+file(GLOB SIM_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+list(REMOVE_ITEM SIM_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+add_library(sim_core ${SIM_CORE_SOURCES})
 target_include_directories(sim_core PUBLIC src)
 target_link_libraries(sim_core PUBLIC OpenMP::OpenMP_CXX)
 set_project_warnings(sim_core)

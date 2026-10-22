@@ -89,21 +89,27 @@ planet-collision/
 ├── CLAUDE.md                ← rules for Claude Code (see section 9)
 ├── .clang-format
 ├── .github/workflows/ci.yml
-├── src/
+├── src/                     ← each module is a .hpp (interface) + .cpp (implementation)
 │   ├── main.cpp             ← CLI: load config, run sim, write output
 │   ├── particles.hpp        ← SoA particle storage
+│   ├── params.hpp           ← SimParams: settings every physics function takes
+│   ├── config.cpp           ← load scenario files into a Config
 │   ├── init.cpp             ← planet generation + relaxation
+│   ├── gravity.cpp          ← Backend enum + dispatch to a backend
 │   ├── gravity_serial.cpp   ← reference implementation (never delete)
 │   ├── gravity_omp.cpp
 │   ├── gravity_hip.hip      ← only built with ENABLE_HIP
-│   ├── contact.cpp          ← uniform grid + contact forces
+│   ├── contact.cpp          ← contact forces (brute force, then uniform grid)
+│   ├── forces.cpp           ← compute_accelerations: gravity, then contact
 │   ├── integrator.cpp       ← leapfrog
 │   ├── diagnostics.cpp      ← energy, momentum, angular momentum
-│   └── io.cpp               ← write frames (CSV first, binary later)
-├── tests/
+│   ├── io.cpp               ← write frames (CSV first, binary later)
+│   └── util.cpp             ← not_implemented() for stubs
+├── tests/                   ← every tests/*.cpp joins one CPU test binary
 │   ├── test_two_body.cpp
 │   ├── test_conservation.cpp
-│   └── test_backends_match.cpp
+│   ├── test_backends_match.cpp
+│   └── gpu/                 ← GPU tests: separate binary, label `gpu`, only with ENABLE_HIP
 ├── configs/                 ← scenario files (head-on, grazing, Theia-like)
 ├── scripts/
 │   ├── render.py            ← frames → images → video

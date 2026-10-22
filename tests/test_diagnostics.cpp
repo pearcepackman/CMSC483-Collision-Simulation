@@ -14,6 +14,10 @@ TEST(Particles, ResizeKeepsAllFieldsTheSameLength) {
             EXPECT_EQ(v, 0.0);
         }
     }
+    ASSERT_EQ(p.body.size(), 5u);
+    for (int b : p.body) {
+        EXPECT_EQ(b, 0);
+    }
 }
 
 TEST(Diagnostics, EmptySystemIsAllZero) {
