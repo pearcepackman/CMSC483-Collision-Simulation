@@ -64,7 +64,10 @@
       "name": "asan",
       "inherits": "base",
       "configurePreset": "asan",
-      "environment": { "UBSAN_OPTIONS": "print_stacktrace=1" }
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1",
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan_suppressions.txt:print_suppressions=1"
+      }
     },
     {
       "name": "tsan",

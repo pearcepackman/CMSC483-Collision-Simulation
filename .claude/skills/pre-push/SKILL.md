@@ -102,7 +102,9 @@ Per `CLAUDE.md`: every new backend or physics change needs a test. For each beha
 - New code path → NaN/Inf guard exercised.
 - GPU-only tests → CTest label `gpu`.
 
-Docs, scripts and CI-only changes usually need no new C++ tests; say so explicitly. Write the missing tests, then go on to Phase 6b.
+Docs, scripts and CI-only changes usually need no new C++ tests; say so explicitly. Write the missing tests.
+
+**CI coverage:** a test only protects `main` if CI runs it. If the change adds something CI should exercise (a new executable or test binary, a CTest label, a sanitizer or runtime setting, a script, a new parallel code path that TSan should see), check `.github/workflows/ci.yml` covers it. If not, add it in this PR when it's small, or name the open issue that will (e.g. #21 for TSan, #17 for the smoke test) in the Phase 8 summary. CI runs ubuntu-24.04 (gcc 13, clang 18, libomp 18), older than the dev machine, so a local pass can still fail in CI (see docs/tooling.md). Then go on to Phase 6b.
 
 ## Phase 6b: Docs for what changed
 

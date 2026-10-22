@@ -97,6 +97,8 @@ Extras:
 - `concurrency: cancel-in-progress` so a new push cancels the older run.
 - Upload `bench/` CSVs and smoke-test energy logs as artifacts on failure.
 - Labels: tests needing a GPU get the `gpu` CTest label. GPU tests run manually on a GPU machine.
+- **CI's toolchain is older than Arch's:** ubuntu-24.04 has gcc 13, clang 18 and libomp 18, versus much newer versions on the dev machine. Local runs passing doesn't guarantee CI passes, so CI is the final check.
+- **LeakSanitizer suppression** ([tests/lsan_suppressions.txt](../tests/lsan_suppressions.txt), loaded by the `asan` test preset): libomp 18 never frees its thread-team structures, and LSan reported that as a leak once tests changed the OpenMP thread count (PR #42). Only allocations inside `libomp.so` are ignored; leaks in our code still fail. LSan reads the file only when it finds a leak, so a typo in the path only shows up when something leaks.
 
 ### Secret scanning
 
