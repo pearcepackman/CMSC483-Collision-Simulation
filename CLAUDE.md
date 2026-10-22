@@ -15,6 +15,12 @@ git ls-files '*.cpp' '*.hpp' '*.cu' '*.cuh' | xargs clang-format --dry-run --Wer
 
 Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (pinned clang-format).
 
+## Git: hard rule
+
+**IMPORTANT: Never change git or pull-request state unless the user asks for that specific action in their current message.** No commits, staging, branches, checkouts/switches, merges, rebases, resets, stashes, tags, pushes or pulls, and no creating, editing, merging, closing or commenting on PRs (including through `gh api`). Approving a plan, a review finding, or a skill's output is **not** permission; ask separately. Instead, say what you'd run and let the user run it or tell you to.
+
+Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fetch`; `gh pr view`, `gh run`, `gh issue view/list`), and GitHub planning: creating and editing issues, milestones and labels, and commenting on issues. `.claude/settings.json` backs this up with permission prompts.
+
 ## Rules
 
 - **Never delete or "optimize" `gravity_serial.cpp`.** It's the reference every other backend is tested against.
