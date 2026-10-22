@@ -140,4 +140,6 @@ Fixed: <summary>
 - Summary is **around 50 characters**, specific, no trailing period (e.g. `Added: OpenMP gravity backend with match test`).
 - Put it in a code block so it's easy to copy.
 
-Don't commit, push, or touch branches or PRs (see the git rule in `CLAUDE.md`). The user does all git work themselves.
+**PR description:** if the branch has an open PR, update its description with `gh pr edit --body-file` (allowed by the git rule in `CLAUDE.md`): one `Closes #N` line per issue from Phase 1 that this work finishes, then a short summary of what's done and anything still in progress. Keep any text the user wrote. If there's no PR yet, give the description for the user to paste when they open it.
+
+Don't commit, push, touch branches, or create/merge/close PRs. The user does that.
