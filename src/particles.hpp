@@ -16,6 +16,7 @@ struct Particles {
     std::vector<double> ax, ay, az; // acceleration from the last force evaluation
     std::vector<double> mass;
     std::vector<double> radius;
+    std::vector<int> body; // which planet the particle started in (for coloring)
 
     std::size_t size() const { return x.size(); }
 
@@ -25,5 +26,6 @@ struct Particles {
              {&x, &y, &z, &vx, &vy, &vz, &ax, &ay, &az, &mass, &radius}) {
             field->resize(n, 0.0);
         }
+        body.resize(n, 0);
     }
 };

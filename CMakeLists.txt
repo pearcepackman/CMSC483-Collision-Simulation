@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(ENABLE_CUDA "Build the CUDA gravity backend" OFF)
+option(ENABLE_HIP "Build the HIP (AMD GPU) gravity backend" OFF)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 set(SANITIZER "" CACHE STRING "Sanitizer build: address (ASan+UBSan), thread (TSan), or empty")
 
 # Sanitizers apply to everything (including GoogleTest) so instrumentation is consistent.
-# Compile flags are limited to C++ so nvcc never sees gcc/clang-only options.
+# Compile flags are limited to C++ so the HIP compiler never sees host-only options.
 if(SANITIZER STREQUAL "address")
     add_compile_options(
         "$<$<COMPILE_LANGUAGE:CXX>:-fsanitize=address,undefined;-fno-sanitize-recover=all;-fno-omit-frame-pointer>")
@@ -34,12 +34,12 @@ if(APPLE AND NOT DEFINED OpenMP_ROOT AND NOT DEFINED ENV{OpenMP_ROOT})
 endif()
 find_package(OpenMP REQUIRED)
 
-if(ENABLE_CUDA)
-    enable_language(CUDA)
-    message(STATUS "CUDA enabled (backend arrives in milestone 4)")
+if(ENABLE_HIP)
+    enable_language(HIP)
+    message(STATUS "HIP enabled (backend arrives in milestone 4)")
 endif()
 
-# Warnings for our own C++ targets only; third-party code (GoogleTest) and nvcc are left alone.
+# Warnings for our own C++ targets only; third-party code (GoogleTest) and HIP sources are left alone.
 function(set_project_warnings target)
     target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wshadow;-Wconversion>")
     if(WARNINGS_AS_ERRORS)
@@ -47,7 +47,11 @@ function(set_project_warnings target)
     endif()
 endfunction()
 
-add_library(sim_core src/diagnostics.cpp)
+# Every src/*.cpp except main.cpp goes into the core library, so new modules need no
+# CMake edits. CONFIGURE_DEPENDS re-checks the file list on each build.
+file(GLOB SIM_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+list(REMOVE_ITEM SIM_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+add_library(sim_core ${SIM_CORE_SOURCES})
 target_include_directories(sim_core PUBLIC src)
 target_link_libraries(sim_core PUBLIC OpenMP::OpenMP_CXX)
 set_project_warnings(sim_core)

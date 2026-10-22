@@ -11,7 +11,9 @@ FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
-add_executable(sim_tests test_diagnostics.cpp)
+# Every tests/*.cpp joins the one test binary, so new test files need no CMake edits.
+file(GLOB SIM_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+add_executable(sim_tests ${SIM_TEST_SOURCES})
 target_link_libraries(sim_tests PRIVATE sim_core GTest::gtest_main)
 set_project_warnings(sim_tests)
 # PRE_TEST: list tests when ctest runs, not at build time, so a binary that can't
