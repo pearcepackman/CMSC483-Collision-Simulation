@@ -104,7 +104,7 @@ Per `CLAUDE.md`: every new backend or physics change needs a test. For each beha
 
 Docs, scripts and CI-only changes usually need no new C++ tests; say so explicitly. Write the missing tests.
 
-**CI coverage:** a test only protects `main` if CI runs it. If the change adds something CI should exercise (a new executable or test binary, a CTest label, a sanitizer or runtime setting, a script, a new parallel code path that TSan should see), check `.github/workflows/ci.yml` covers it. If not, add it in this PR when it's small, or name the open issue that will (e.g. #21 for TSan, #17 for the smoke test) in the Phase 8 summary. CI runs ubuntu-24.04 (gcc 13, clang 18, libomp 18), older than the dev machine, so a local pass can still fail in CI (see docs/tooling.md). Then go on to Phase 6b.
+**CI coverage:** a test only protects `main` if CI runs it. If the change adds something CI should exercise (a new executable or test binary, a CTest label, a sanitizer or runtime setting, a script, a new parallel code path that TSan should see), check `.github/workflows/ci.yml` covers it. If not, add it in this PR when it's small, or name the open issue that will (e.g. #21 for TSan, #17 for the smoke test) in the Phase 8 summary. CI runs ubuntu-24.04 (gcc 13, clang 18, libomp 18), older than the dev machine, so a local pass can still fail in CI (see docs/tooling.md). If this change **adds or renames a CI job**, it gates nothing until it's in `main`'s required checks: say so in the Phase 8 summary and ask the user to approve adding it (`docs/tooling.md`, "Branch protection"). Then go on to Phase 6b.
 
 ## Phase 6b: Docs for what changed
 
@@ -127,7 +127,7 @@ Run in this order and stop at the first failure:
 2. **Build:** `cmake --preset dev && cmake --build --preset dev` (warnings are errors).
 3. **Tests:** run `ctest --preset dev -LE gpu --output-on-failure` twice, with `OMP_NUM_THREADS=1` and `OMP_NUM_THREADS=4`.
 4. **ASan/UBSan:** `asan` preset build + `ctest -LE gpu`.
-5. **TSan** (Linux only, only if the diff touches parallel code): `tsan` preset with `TSAN_OPTIONS=ignore_noninstrumented_modules=1`, `OMP_NUM_THREADS=4`.
+5. **TSan** (Linux only, only if the diff touches parallel code): `tsan` preset (it sets `TSAN_OPTIONS` and `OMP_NUM_THREADS=4`), with Archer loaded the way CI does: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' | head -n 1) ctest --preset tsan`. Without Archer, TSan doesn't understand OpenMP and its results mean little.
 6. **HIP (GPU):** if `hipcc` exists, build the `hip` preset. If `rocminfo` also lists a `gfx` GPU agent, run `ctest -L gpu`. Otherwise say it's skipped (CI compiles it; GPU tests run on Pearce's PC).
 7. **Smoke test:** the tiny collision run (see CI `smoke` job). Fail on NaN or energy drift. Until the `smoke` job exists (milestone 2), report this step as skipped (N/A).
 8. **Python:** if `scripts/` changed, at least `python3 -m py_compile` on the changed scripts.
