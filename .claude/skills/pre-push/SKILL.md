@@ -1,6 +1,6 @@
 ---
 name: pre-push
-description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review (plus an adversarial review for parallel/physics code, or on request), gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, runs the local equivalent of CI, and proposes a commit message. Use when the user says /pre-push, "ready to push", "check before I push", or similar.
+description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review (plus an adversarial review for parallel/physics code, or on request), gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, updates stale docs (README status, design notes, plan), runs the local equivalent of CI, and proposes a commit message. Use when the user says /pre-push, "ready to push", "check before I push", or similar.
 argument-hint: "[adversarial | no-adversarial]"
 ---
 
@@ -102,7 +102,18 @@ Per `CLAUDE.md`: every new backend or physics change needs a test. For each beha
 - New code path → NaN/Inf guard exercised.
 - GPU-only tests → CTest label `gpu`.
 
-Docs, scripts and CI-only changes usually need no new C++ tests; say so explicitly. Write the missing tests, then go on to Phase 7.
+Docs, scripts and CI-only changes usually need no new C++ tests; say so explicitly. Write the missing tests, then go on to Phase 6b.
+
+## Phase 6b: Docs for what changed
+
+Docs drift silently, so check each against the diff and the issue(s) from Phase 1, and update what's stale:
+
+- **README.md:** the milestone **Status** table, the quickstart/commands if they changed, the repository layout if top-level folders were added, and the team list. Status counts only issues closed as **completed** (or completed by this PR); issues closed as "not planned" don't count. A milestone is "Done" when every remaining issue is completed, "In progress" once at least one is, "Not started" otherwise. Check with `gh issue list --milestone "<name>" --state all --json number,state,stateReason`.
+- **docs/notes.md:** every design decision or measurement this work made gets an entry (date · decision · why · evidence, with numbers and hardware for benchmarks). This file becomes the presentation.
+- **PLAN.md:** the repo layout (§5) if files were added or renamed; anything the work proved wrong.
+- **docs/tooling.md** for build/CI/tooling changes; **CLAUDE.md** if commands or rules changed.
+
+List what you updated (or "docs already current") in the Phase 8 summary.
 
 ## Phase 7: Run the local equivalent of CI
 
@@ -125,7 +136,7 @@ If a failure is caused by the diff, fix it and re-run from step 1. If it isn't c
 
 ## Phase 8: Summary and commit message
 
-Give a short summary as a checklist: review (N found / N fixed / N skipped), secrets/junk, tests added, and each CI step (passed / failed / skipped + reason).
+Give a short summary as a checklist: review (N found / N fixed / N skipped), secrets/junk, tests added, docs updated (Phase 6b), and each CI step (passed / failed / skipped + reason).
 
 Then propose **one** commit subject line in exactly one of these forms:
 

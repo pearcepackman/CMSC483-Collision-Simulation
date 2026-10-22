@@ -12,10 +12,10 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 
 | # | Milestone | Status |
 |---|---|---|
-| 0 | Repo, build system, CI | In progress |
-| 1 | Serial two-body orbit (leapfrog, energy conservation) | Not started |
+| 0 | Repo, build system, CI | Done |
+| 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity + leapfrog done; planet generation, frame output, rendering left |
 | 2 | Serial planet collision + first video | Not started |
-| 3 | OpenMP backend + speedup graphs | Not started |
+| 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | Not started |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
 | 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
@@ -43,6 +43,13 @@ ctest --preset dev
 ```
 
 GoogleTest downloads automatically during the first configure.
+
+Measure the OpenMP speedup (release build, threads pinned to cores):
+
+```bash
+cmake --preset release && cmake --build --preset release
+OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
+```
 
 ### Build presets
 
@@ -72,7 +79,7 @@ tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       tooling decisions and the parallel-design notes behind the presentation
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
-bench/      committed benchmark results                               [coming]
+bench/      micro-benchmarks (bench_gravity) and committed results
 ```
 
 ## How we know it's correct

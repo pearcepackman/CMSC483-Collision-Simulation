@@ -115,7 +115,9 @@ planet-collision/
 │   ├── render.py            ← frames → images → video
 │   ├── plot_energy.py
 │   └── bench.py             ← run benchmarks, make speedup graphs
-└── bench/results/           ← committed CSVs of benchmark runs
+└── bench/
+    ├── bench_gravity.cpp    ← times one gravity evaluation: serial vs OpenMP thread counts
+    └── results/             ← committed CSVs of benchmark runs
 ```
 
 **Key rule:** one interface, multiple backends. `compute_gravity(particles)` has a serial, OpenMP and HIP version selected by a flag (`--backend serial|omp|hip`). Same inputs, same outputs, swappable. This makes testing and benchmarking easy.
