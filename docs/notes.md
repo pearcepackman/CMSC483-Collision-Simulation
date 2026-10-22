@@ -58,6 +58,24 @@ A running log of the parallel-computing decisions in this project: what we chose
 
 _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` (consumer GPUs run `double` many times slower)._
 
+---
+
+## Time integration
+
+### Leapfrog (kick-drift-kick) instead of Euler (Oct 2026, #8)
+**Decision:** [`leapfrog_step()`](../src/integrator.cpp) advances the simulation as: half-step velocity kick, full-step position drift, recompute forces, half-step kick. Forces are computed once per step.
+**Why:** leapfrog is *symplectic*: it preserves the geometry of orbital motion, so its energy error wobbles but never builds up. Euler updates positions and velocities from the old state only, so every orbit adds a little energy, and orbits spiral outward. Leapfrog costs the same one force evaluation per step.
+**Evidence:** the same two-body circular orbit (G = 1, period 2π, 1,000 steps per orbit, 1,000 orbits) through both methods:
+
+| Worst energy error so far | after 1 orbit | after 10 | after 100 | after 1,000 | separation at the end (starts at 1) |
+|---|---|---|---|---|---|
+| **Leapfrog** | 3.9e-10 | 3.9e-10 | 3.9e-10 | 3.9e-10 | 1.00 |
+| **Euler** | 6.8e-2 | 3.3e-1 | 6.6e-1 | 8.4e-1 | 6.42 |
+
+Relative energy error |E − E₀|/|E₀|, worst value seen up to that point (checked every step). The numbers are identical with gcc `-O2` and `-O3 -march=native`. Leapfrog's error wobbles within each orbit, peaking at 3.9e-10, and that peak never grows: it's a fixed property of the method at this step size, not accumulated error. Euler is off by 7% after one orbit and keeps getting worse: the orbit spirals outward to 6× its starting separation. [tests/test_two_body.cpp](../tests/test_two_body.cpp) enforces < 1e-5 with no drift; during review it caught 8 deliberately broken integrators, including one losing 1e-11 of its speed per step.
+
+---
+
 ## Contact
 
 _Upcoming: uniform grid (cell list) construction in parallel; load balance across uneven cells._
