@@ -88,7 +88,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is co
 | `format` | `clang-format --dry-run --Werror` (pinned version) | Unformatted code |
 | `build-test` | Matrix of gcc and clang: build with `-Werror`, then `ctest -LE gpu` with `OMP_NUM_THREADS=1` **and** `4` | Compile errors, test failures, races that only show up with several threads |
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
-| `tsan` | clang + libomp (Archer), `TSAN_OPTIONS=ignore_noninstrumented_modules=1` | Data races in OpenMP loops. **Start as non-blocking** (`continue-on-error`) until we confirm it's clean, then make it required. Ubuntu's libomp isn't TSan-instrumented, so load Archer explicitly: `OMP_TOOL_LIBRARIES=/usr/lib/llvm-18/lib/libarcher.so` (check the path with `find /usr/lib -name libarcher.so`). Added with milestone 3. |
+| `tsan` | clang + libomp + Archer (found with `find /usr/lib -name 'libarcher.so*'`, loaded via `OMP_TOOL_LIBRARIES`), `tsan` preset at 4 threads | Data races in OpenMP loops. **Blocking** (#21). It first runs a **canary**, [.github/ci/tsan_canary.cpp](../.github/ci/tsan_canary.cpp), a deliberately racy loop; if TSan doesn't report it, the job fails, so a broken race checker can't pass silently. Locally: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' \| head -n 1) ctest --preset tsan`. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
 | `hip-compile` | Inside an AMD ROCm devel container (Ubuntu 24.04), `-DENABLE_HIP=ON`, explicit `CMAKE_HIP_ARCHITECTURES=gfx1200` (CMake can't detect a GPU that isn't there) | HIP syntax/type errors |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |
@@ -97,6 +97,8 @@ Extras:
 - `concurrency: cancel-in-progress` so a new push cancels the older run.
 - Upload `bench/` CSVs and smoke-test energy logs as artifacts on failure.
 - Labels: tests needing a GPU get the `gpu` CTest label. GPU tests run manually on a GPU machine.
+- **CI's toolchain is older than Arch's:** ubuntu-24.04 has gcc 13, clang 18 and libomp 18, versus much newer versions on the dev machine. Local runs passing doesn't guarantee CI passes, so CI is the final check.
+- **LeakSanitizer suppression** ([tests/lsan_suppressions.txt](../tests/lsan_suppressions.txt), loaded by the `asan` test preset): libomp 18 never frees its thread-team structures, and LSan reported that as a leak once tests changed the OpenMP thread count (PR #42). Only allocations inside `libomp.so` are ignored; leaks in our code still fail. LSan reads the file only when it finds a leak, so a typo in the path only shows up when something leaks.
 
 ### Secret scanning
 
@@ -108,7 +110,7 @@ There's little to leak in this project (no API keys). The real risks are an **SS
 
 ### Branch protection
 
-Protect `main`: require PRs, require `format`, `build-test`, `asan`, `hip-compile` and `smoke` to pass.
+**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan` and `tsan`. It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. When `hip-compile` (#24) and `smoke` (#17) land, add them to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
 
 ---
 

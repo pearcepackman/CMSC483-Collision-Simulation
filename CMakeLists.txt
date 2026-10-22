@@ -60,5 +60,11 @@ add_executable(planet_sim src/main.cpp)
 target_link_libraries(planet_sim PRIVATE sim_core)
 set_project_warnings(planet_sim)
 
+# Micro-benchmark for the gravity backends (#19). Built everywhere so CI keeps it
+# compiling; run it from the release preset for real numbers.
+add_executable(bench_gravity bench/bench_gravity.cpp)
+target_link_libraries(bench_gravity PRIVATE sim_core)
+set_project_warnings(bench_gravity)
+
 enable_testing()
 add_subdirectory(tests)

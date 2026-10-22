@@ -41,6 +41,8 @@ jobs:
         run: cmake --build --preset dev
       - name: Run planet_sim
         run: ./build/dev/planet_sim
+      - name: Run bench_gravity (smoke run, so the benchmark can't silently break)
+        run: ./build/dev/bench_gravity 500 1
       - name: Test (1 thread)
         run: ctest --preset dev
         env:
@@ -59,3 +61,33 @@ jobs:
       - run: cmake --preset asan
       - run: cmake --build --preset asan
       - run: ctest --preset asan
+
+  # Data races in OpenMP code (#21). TSan alone doesn't understand OpenMP's
+  # synchronization; LLVM's Archer tool, loaded through OMP_TOOL_LIBRARIES, teaches it.
+  tsan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libomp-dev
+      - name: Find Archer
+        run: |
+          ARCHER=$(find /usr/lib -name 'libarcher.so*' | head -n 1)
+          if [ -z "$ARCHER" ]; then echo "libarcher.so not found"; exit 1; fi
+          echo "Archer: $ARCHER"
+          echo "OMP_TOOL_LIBRARIES=$ARCHER" >> "$GITHUB_ENV"
+      - name: Canary (TSan must catch a deliberate race)
+        run: |
+          clang++ -g -fsanitize=thread -fopenmp .github/ci/tsan_canary.cpp -o tsan_canary
+          OMP_NUM_THREADS=4 TSAN_OPTIONS=ignore_noninstrumented_modules=1 ./tsan_canary > canary.log 2>&1 || true
+          if grep -q "ThreadSanitizer: data race" canary.log; then
+            echo "TSan caught the deliberate race: race checking works."
+          else
+            cat canary.log
+            echo "TSan did NOT catch the deliberate race: race checking is misconfigured."
+            exit 1
+          fi
+      - run: cmake --preset tsan
+      - run: cmake --build --preset tsan
+      - name: Test under TSan (4 threads, preset sets OMP_NUM_THREADS and TSAN_OPTIONS)
+        run: ctest --preset tsan

@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for the asan preset (loaded via LSAN_OPTIONS in CMakePresets.json).
+#
+# LLVM's OpenMP runtime keeps its thread-team structures until the process exits and never
+# frees them, which LeakSanitizer reports as leaks. Seen with libomp 18 on CI (Ubuntu 24.04)
+# when a test changes the thread count; libomp 22 (Arch) cleans up. Only allocations made
+# inside libomp itself are ignored: a leak in our own code still fails the asan job.
+leak:libomp.so

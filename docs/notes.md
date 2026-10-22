@@ -56,6 +56,33 @@ A running log of the parallel-computing decisions in this project: what we chose
 **Why:** it's the simplest correct version, and it adds the numbers in the same order the OpenMP and GPU backends will (one particle per thread), so backend-match tests compare against an identically structured sum. Using Newton's 3rd law (each pair once, applied to both particles) halves the work but adds in a different order and needs atomics in parallel; #31 measures that trade-off.
 **Evidence** ([tests/test_gravity.cpp](../tests/test_gravity.cpp)): 2- and 3-particle cases match hand-computed forces and potential to 1e-14 relative; 20 random particles match the same sum done in `long double` to 1e-13; the force equals minus the slope of the potential (central differences); and sum(m·a) over 100 random particles cancels to within 1e-12 of sum(m·|a|). During review, 19 deliberately broken copies of the gravity code (sign flips, swapped axes, single precision, missing pairs) were all caught by these tests.
 
+### OpenMP gravity: first speedup (Oct 2026, #19)
+**Decision:** [`compute_gravity_omp()`](../src/gravity_omp.cpp) is the serial loop with `#pragma omp parallel for schedule(static) default(none)` on the outer loop. Each thread owns a block of particles and is the only writer of their accelerations; positions and masses are read-only, so there are no races and no atomics. Each particle is summed by one thread in the same order as serial, so results match the reference.
+**Evidence (correctness):** [tests/test_backends_match.cpp](../tests/test_backends_match.cpp) matches serial within 1e-12 relative at 1, 2, 4 and 12 threads, including N = 37 on 4 threads and N = 2 on 12. ThreadSanitizer with Archer (OpenMP-aware) reports 0 races; on a deliberately racy copy (shared running sum) it reports 9, so the check is real.
+**Evidence (speed):** AMD Ryzen 5 7600X (6 cores / 12 threads), N = 10,000, `release` build, median of 9 interleaved rounds ([bench/bench_gravity.cpp](../bench/bench_gravity.cpp)). Reproduce with:
+```bash
+cmake --preset release && cmake --build --preset release
+OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
+```
+
+| OpenMP threads | s/eval | speedup vs 1-thread OpenMP | efficiency |
+|---|---|---|---|
+| 1 | 0.286 | 1.00x | 100% |
+| 2 | 0.153 | 1.88x | 94% |
+| 4 | 0.070 | 4.08x | 102% |
+| 6 | 0.049 | 5.88x | 98% |
+| 8 | 0.070 | 4.08x | 51% |
+| 12 | 0.050 | 5.73x | 48% |
+
+Across four runs, 6 threads gave 5.84–6.03x over 1-thread OpenMP. Serial took 0.28–0.33 s; it's the noisiest number, so the table compares against 1-thread OpenMP (the bench prints both).
+
+**Why it looks like this:**
+- **Near-perfect up to 6 threads:** each particle's work is independent and identical, there's no shared write, and N² math dominates memory traffic. One thread per physical core, no contention.
+- **8 threads is *slower* than 6:** `schedule(static)` hands every thread an equal block, but with 8 threads on 6 cores, two cores run two threads each at about half speed. The whole loop waits for those slow blocks, so 8 threads finish no sooner than 4. This is the load-imbalance question #22 (static vs dynamic) investigates.
+- **12 threads ≈ 6:** the second hardware thread per core (SMT) shares the same floating-point units, and this loop already keeps them busy, so it adds nothing.
+- **Measurement lesson:** the first runs showed "123% efficiency." That was noise, not magic: with the `powersave` governor, CPU boost and other programs running, the clock speed drifts between measurements. The benchmark now interleaves configurations each round and reports speedup against 1-thread OpenMP as well as serial.
+- **1-thread OpenMP is 3–16% faster than serial** (varies run to run) with identical math and bit-identical results. The compiled code shows why: serial's inner loop re-loads the `y`, `z` and `mass` array addresses from the `Particles` struct on every iteration (the compiler can't prove the writes to `ax/ay/az` don't change them), while the OpenMP version copies them into local pointers that stay in registers. The serial reference is deliberately left unoptimized (CLAUDE.md).
+
 _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` (consumer GPUs run `double` many times slower)._
 
 ---
