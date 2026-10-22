@@ -2,7 +2,7 @@
 
 How the repo is built, checked, and tested, and why. Complements [PLAN.md](../PLAN.md) sections 3, 5 and 8.
 
-**Primary dev platform: Linux (x86_64).** macOS works for editing and serial/OpenMP runs, but CUDA and reliable race detection are Linux-only. CI runs on Linux.
+**Primary dev platform: Linux (x86_64).** macOS works for editing and serial/OpenMP runs, but the GPU backend (ROCm/HIP) and reliable race detection are Linux-only. CI runs on Linux. The GPU machine is Pearce's PC (AMD Radeon RX 9060 XT, `gfx1200`).
 
 ---
 
@@ -10,7 +10,7 @@ How the repo is built, checked, and tested, and why. Complements [PLAN.md](../PL
 
 All `.cpp` files, written with plain structs, arrays and free functions. Reasons:
 
-- CUDA (`.cu`) is a C++ dialect, and GoogleTest is C++. A C core would still need C++ around it.
+- HIP (`.hip`) is a C++ dialect, and GoogleTest is C++. A C core would still need C++ around it.
 - `std::vector` gives bounds-checkable, auto-freed arrays, so there's no `malloc`/`free` bookkeeping.
 - Mixing C and C++ means `extern "C"` glue and two sets of compiler flags, which buys us nothing here.
 
@@ -41,7 +41,7 @@ For a web developer, the closest mapping is:
   | `release` | default | Benchmarks: `-O3 -march=native` |
   | `asan` | clang | Debug + AddressSanitizer + UBSan (memory bugs, UB) |
   | `tsan` | clang + libomp | ThreadSanitizer (data races in OpenMP code) |
-  | `cuda` | nvcc | `-DENABLE_CUDA=ON` (added with milestone 4) |
+  | `hip` | ROCm clang | `-DENABLE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1200` (added with milestone 4) |
 
 - **GoogleTest** via `FetchContent`, pinned to **v1.17.0** (latest confirmed release; needs C++17). Pin a tag, never `main`.
 - Export `compile_commands.json` (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`) so editors (clangd / VS Code) understand the code.
@@ -51,7 +51,7 @@ For a web developer, the closest mapping is:
 ```bash
 sudo apt install build-essential cmake ninja-build clang libomp-dev python3-venv
 pip install clang-format==<pinned>   # pinned version: see section 3
-# CUDA: install the toolkit only if the machine has an NVIDIA GPU (nvidia-smi works)
+# GPU backend: only on a machine with a ROCm-supported AMD GPU (Arch: sudo pacman -S rocm-hip-sdk)
 ```
 
 ### macOS setup (secondary)
@@ -61,11 +61,11 @@ brew install cmake ninja libomp
 export OpenMP_ROOT=$(brew --prefix)/opt/libomp   # Apple clang has no OpenMP; this points CMake at Homebrew's
 ```
 
-On macOS, `gcc` is actually Apple clang. There's no CUDA and no usable TSan for OpenMP code. As of Apple clang 17 / macOS 26.6, **ASan deadlocks at startup** (even on an empty program), so the `asan` preset only works on Linux. UBSan alone works.
+On macOS, `gcc` is actually Apple clang. There's no ROCm and no usable TSan for OpenMP code. As of Apple clang 17 / macOS 26.6, **ASan deadlocks at startup** (even on an empty program), so the `asan` preset only works on Linux. UBSan alone works.
 
 ### Remote Linux box
 
-If the Linux machine is remote (lab box, HPCF), use **VS Code Remote-SSH**. The Claude Code extension runs on the remote side, so builds, tests and `/pre-push` all run on Linux.
+If the Linux machine is remote (e.g. working on Pearce's PC from a laptop), use **VS Code Remote-SSH**. The Claude Code extension runs on the remote side, so builds, tests and `/pre-push` all run on Linux.
 
 ---
 
@@ -81,7 +81,7 @@ If the Linux machine is remote (lab box, HPCF), use **VS Code Remote-SSH**. The 
 
 ## 4. CI (GitHub Actions)
 
-Runs on every push and PR. GitHub's hosted runners have **no GPU**, so CUDA is compile-only in CI.
+Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is compile-only in CI.
 
 | Job | What it does | Catches |
 |---|---|---|
@@ -90,7 +90,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so CUDA is c
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
 | `tsan` | clang + libomp (Archer), `TSAN_OPTIONS=ignore_noninstrumented_modules=1` | Data races in OpenMP loops. **Start as non-blocking** (`continue-on-error`) until we confirm it's clean, then make it required. Ubuntu's libomp isn't TSan-instrumented, so load Archer explicitly: `OMP_TOOL_LIBRARIES=/usr/lib/llvm-18/lib/libarcher.so` (check the path with `find /usr/lib -name libarcher.so`). Added with milestone 3. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
-| `cuda-compile` | Inside `nvidia/cuda:<ver>-devel-ubuntu24.04`, `-DENABLE_CUDA=ON`, explicit `CMAKE_CUDA_ARCHITECTURES` (CMake can't detect a GPU that isn't there) | CUDA syntax/type errors |
+| `hip-compile` | Inside an AMD ROCm devel container (Ubuntu 24.04), `-DENABLE_HIP=ON`, explicit `CMAKE_HIP_ARCHITECTURES=gfx1200` (CMake can't detect a GPU that isn't there) | HIP syntax/type errors |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |
 
 Extras:
@@ -100,7 +100,7 @@ Extras:
 
 ### Secret scanning
 
-There's little to leak in this project (no API keys). The real risks are an **SSH key or HPCF password** pasted into a script, and **huge files** (frames, videos, `build/`) committed by accident. So:
+There's little to leak in this project (no API keys). The real risks are an **SSH key or password** pasted into a script, and **huge files** (frames, videos, `build/`) committed by accident. So:
 
 - Enable GitHub **secret scanning + push protection** in repo settings (free on public repos).
 - `/pre-push` runs `gitleaks` if installed (otherwise a regex check), plus a large-file/junk check.
@@ -108,7 +108,7 @@ There's little to leak in this project (no API keys). The real risks are an **SS
 
 ### Branch protection
 
-Protect `main`: require PRs, require `format`, `build-test`, `asan`, `cuda-compile` and `smoke` to pass.
+Protect `main`: require PRs, require `format`, `build-test`, `asan`, `hip-compile` and `smoke` to pass.
 
 ---
 
@@ -153,4 +153,4 @@ Commit `bench/results/*.csv` (the curated results), not raw run output.
 - [Archer slides (VI-HPS)](https://www.vi-hps.org/cms/upload/material/tw27/Archer.pdf)
 - [Debian googletest tracker (1.18 not yet released)](https://tracker.debian.org/pkg/googletest)
 - [Julia discourse: CUDA in GitHub CI (no GPUs on hosted runners)](https://discourse.julialang.org/t/how-to-use-cuda-in-github-ci/77855)
-- [stden/cpp-cuda image (nvcc builds without a GPU)](https://hub.docker.com/r/stden/cpp-cuda)
+- [Phoronix: ROCm 7.0.2 officially supports the Radeon RX 9060 series](https://www.phoronix.com/news/AMD-ROCm-7.0.2-Released)

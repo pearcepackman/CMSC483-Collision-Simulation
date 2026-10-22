@@ -34,7 +34,7 @@ A running log of the parallel-computing decisions in this project: what we chose
 
 ## Gravity
 
-_Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; CUDA naive vs shared-memory tiled kernel; `float` vs `double`._
+_Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` (consumer GPUs run `double` many times slower)._
 
 ## Contact
 

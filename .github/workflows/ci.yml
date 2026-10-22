@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - name: clang-format check
-        run: git ls-files '*.cpp' '*.hpp' '*.cu' '*.cuh' | xargs clang-format --dry-run --Werror
+        run: git ls-files '*.cpp' '*.hpp' '*.hip' | xargs clang-format --dry-run --Werror
 
   build-test:
     runs-on: ubuntu-24.04
