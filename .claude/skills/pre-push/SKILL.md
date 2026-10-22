@@ -24,7 +24,7 @@ Sort the changed files into: **physics/engine** (`src/`), **parallel code** (any
 
 Tell the user in 2–3 lines what's in scope. If the branch is `main`, warn that `main` should be protected and suggest a branch name.
 
-**Find the issue(s) this work is for:** a number at the start of the branch name (`6-module-interfaces`), else `Closes #N` lines in the branch's open PR (`gh pr view --json body -q .body`), else ask the user. Load each with `gh issue view N`, including any plan posted as a comment by `/plan-issue`. Phase 3 checks the diff against them.
+**Find the issue(s) this work is for.** A PR may close several issues (see `CLAUDE.md`), so collect all of: a number at the start of the branch name (`6-module-interfaces`), every `Closes #N` / `Fixes #N` line in the branch's open PR (`gh pr view --json body -q .body`), and any issue the user named. If none turn up, ask the user. Load each with `gh issue view N --comments`, including any plan posted by `/plan-issue`. Phase 3 checks the diff against all of them together.
 
 ## Phase 2: Review
 

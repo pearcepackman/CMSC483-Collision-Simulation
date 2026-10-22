@@ -195,7 +195,7 @@ Put a `CLAUDE.md` at the repo root with rules like these:
 - Every new backend or physics change needs a test, and all tests must pass before a commit.
 - Don't change physics constants or tolerances in tests just to make them pass. Flag it instead.
 - Keep particle data in Struct-of-Arrays layout.
-- Keep each PR to one milestone task.
+- Keep each PR to one feature; it may close several related issues in the same milestone.
 
 **Prompting tips:**
 

@@ -16,12 +16,17 @@ bool backend_from_name(const char *name, Backend *out);
 // Gravity on the chosen backend. Overwrites ax/ay/az.
 void compute_gravity(Particles &p, const SimParams &params, Backend b);
 
-// Reference all-pairs gravity with softening. Overwrites ax/ay/az. Every other
-// backend is tested against this one.
+// Reference all-pairs gravity with softening (G = 1). Overwrites ax/ay/az:
+//   a_i = sum_{j != i} m_j * (r_j - r_i) / (|r_j - r_i|^2 + eps^2)^(3/2)
+// Every other backend is tested against this one. Softening must be > 0 if two
+// particles can sit at the same position (eps = 0 there divides by zero -> NaN).
 void compute_gravity_serial(Particles &p, const SimParams &params);
 
 // OpenMP all-pairs gravity. Overwrites ax/ay/az.
 void compute_gravity_omp(Particles &p, const SimParams &params);
 
-// Total gravitational potential energy (softened, matching the forces).
+// Total gravitational potential energy, softened to match the forces above:
+//   U = -sum_{i<j} m_i m_j / sqrt(|r_j - r_i|^2 + eps^2)
+// O(N^2) and serial, so log it occasionally, not every step. With eps = 0, two
+// particles at the same position give -inf.
 double potential_energy(const Particles &p, const SimParams &params);

@@ -30,5 +30,5 @@ Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fet
 - Every OpenMP parallel region uses `default(none)`, so each variable is explicitly shared or private.
 - Compare backends with relative tolerances, never `==`, and only over a few steps (gravity is chaotic).
 - Tests that need a GPU get the CTest label `gpu`.
-- Keep each PR to one milestone task. Run `/pre-push` before pushing.
+- Keep each PR to one feature; it may close several related issues in the same milestone (one `Closes #N` line per issue). Run `/pre-push` before pushing.
 - Write plain C-style C++: structs, arrays, free functions. No clever templates.
