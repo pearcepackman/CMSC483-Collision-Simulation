@@ -87,6 +87,23 @@ _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work
 
 ---
 
+## The simulation program
+
+### `planet_sim`: loop, outputs, built-in scenarios (Oct 2026, #14)
+**Decisions:**
+- **One loop** ([`run_simulation()`](../src/sim.cpp)): `compute_accelerations()` once (the leapfrog contract), then leapfrog steps. A frame and an energy row at step 0 and every `output_every` steps; potential energy is O(N²) and serial, so it's never computed on other steps.
+- **NaN/Inf check after every step** (one O(N) pass, negligible next to O(N²) gravity). The run stops at the first bad particle and exits with code 2, so "the physics exploded" can't look like success.
+- **Built-in scenarios** (`--scenario orbit|figure8|cloud`) so the program runs before the config loader (#13) and planet generator (#9) exist: benchmarks (#20) and tests (#16) can start now. Collisions come from config files.
+- **Planets are built at rest at the origin**, relaxed, then placed with `place_planet()` (the #15 contract), and forces are recomputed for the combined system before stepping.
+- **`--bench`** writes nothing and prints one line for scripts: `bench backend=omp n=5000 threads=6 steps=20 seconds_per_step=0.0121`.
+- **Exit codes:** 0 ok, 1 usage/setup error, 2 NaN/Inf.
+
+**Evidence:** [tests/test_sim.cpp](../tests/test_sim.cpp) checks the loop gives the same bits as hand-written leapfrog steps, the energy log's rows and conservation, NaN detection, CLI parsing; CTest also runs the real `planet_sim` binary and checks exit codes and output ([tests/CMakeLists.txt](../tests/CMakeLists.txt)). First end-to-end OpenMP number through the real program: a 5,000-particle cloud, 0.077 s/step serial vs 0.012 s/step with 6 threads (6.4x), Ryzen 5 7600X, `release`.
+
+**Lesson:** the first version of the program-level tests passed two error cases *for the wrong reason* (CMake split the argument list, so every run failed with "missing value"). Each error test now matches its specific message, which then caught a real bug: a trailing unknown flag was reported as "missing value".
+
+---
+
 ## Time integration
 
 ### Leapfrog (kick-drift-kick) instead of Euler (Oct 2026, #8)
