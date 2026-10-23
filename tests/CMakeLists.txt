@@ -19,3 +19,37 @@ set_project_warnings(sim_tests)
 # PRE_TEST: list tests when ctest runs, not at build time, so a binary that can't
 # run (e.g. a broken sanitizer runtime) fails the tests instead of the build.
 gtest_discover_tests(sim_tests DISCOVERY_MODE PRE_TEST)
+
+# Tests that run the real planet_sim program and check its exit code and output (#14).
+function(add_cli_test name expect_exit)
+    cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST" "ARGS" ${ARGN})
+    list(JOIN T_ARGS "|" joined_args) # see check_run.cmake
+    set(cmd -DCMD=$<TARGET_FILE:planet_sim> "-DARGS=${joined_args}" -DEXPECT_EXIT=${expect_exit})
+    if(T_OUTPUT)
+        list(APPEND cmd "-DEXPECT_OUTPUT=${T_OUTPUT}")
+    endif()
+    if(T_MUST_NOT_EXIST)
+        list(APPEND cmd "-DMUST_NOT_EXIST=${T_MUST_NOT_EXIST}")
+    endif()
+    add_test(NAME ${name} COMMAND ${CMAKE_COMMAND} ${cmd} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_run.cmake)
+endfunction()
+
+add_cli_test(Cli.OrbitBench 0
+    ARGS --scenario orbit --steps 1000 --bench
+    OUTPUT "bench backend=serial n=2 threads=[0-9]+ steps=1000 seconds_per_step=")
+add_cli_test(Cli.CloudBenchOmp 0
+    ARGS --scenario cloud --n 200 --steps 20 --backend omp --bench
+    OUTPUT "bench backend=omp n=200 ")
+add_cli_test(Cli.BenchWritesNoFiles 0
+    ARGS --scenario orbit --steps 10 --bench --out ${CMAKE_CURRENT_BINARY_DIR}/bench_out_must_not_exist
+    MUST_NOT_EXIST ${CMAKE_CURRENT_BINARY_DIR}/bench_out_must_not_exist)
+add_cli_test(Cli.RunsWithoutOutput 0
+    ARGS --scenario figure8 --steps 500
+    OUTPUT "ran 500 steps")
+# Error cases check the specific message, so a different error can't pass them by luck.
+add_cli_test(Cli.BadFlagIsUsageError 1
+    ARGS --scenario orbit --bogus
+    OUTPUT "unknown flag '--bogus'.*usage")
+add_cli_test(Cli.UnknownScenarioIsUsageError 1
+    ARGS --scenario nope
+    OUTPUT "unknown scenario 'nope'")

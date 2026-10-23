@@ -90,7 +90,9 @@ planet-collision/
 ├── .clang-format
 ├── .github/workflows/ci.yml
 ├── src/                     ← each module is a .hpp (interface) + .cpp (implementation)
-│   ├── main.cpp             ← CLI: load config, run sim, write output
+│   ├── main.cpp             ← planet_sim: set up, run, report (exit codes 0/1/2)
+│   ├── cli.cpp              ← command-line parsing
+│   ├── sim.cpp              ← main loop, energy log, planet placement, built-in scenarios
 │   ├── particles.hpp        ← SoA particle storage
 │   ├── params.hpp           ← SimParams: settings every physics function takes
 │   ├── config.cpp           ← load scenario files into a Config
