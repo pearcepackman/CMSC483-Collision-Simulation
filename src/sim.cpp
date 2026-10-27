@@ -34,14 +34,24 @@ void write_energy_row(FILE *f, int step, double t, const Particles &p, const Sim
                  mom.x, mom.y, mom.z);
 }
 
+bool finish_log(FILE *f) {
+    bool ok = std::ferror(f) == 0;
+    if (std::fclose(f) != 0) { // fclose flushes, so a full disk often shows up here
+        ok = false;
+    }
+    return ok;
+}
+
 RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions &opts,
                          FILE *energy_log) {
     RunResult result;
+    int frame = 0; // frames are numbered 0, 1, 2, ... in output order
     // Frame + energy row for one output step. Energy is O(N^2) and serial, so only here.
     auto output = [&](int step) {
-        if (opts.write_frames && !write_frame(p, opts.out_dir, step / opts.output_every)) {
+        if (opts.write_frames && !write_frame(p, opts.out_dir, frame)) {
             result.io_ok = false;
         }
+        ++frame;
         if (energy_log != nullptr) {
             write_energy_row(energy_log, step, step * params.dt, p, params);
         }
@@ -64,7 +74,8 @@ RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions
             result.finite = false;
             break;
         }
-        if (step % opts.output_every == 0) {
+        // Also output the final step, so the log always covers the whole run.
+        if (step % opts.output_every == 0 || step == opts.steps) {
             output(step);
         }
     }
@@ -104,7 +115,7 @@ Particles build_planets(const Config &cfg, Backend backend) {
     return all;
 }
 
-bool build_scenario(const char *name, int n, unsigned seed, Particles &p, SimParams &params) {
+bool build_scenario(const char *name, int n, std::uint64_t seed, Particles &p, SimParams &params) {
     const double pi = 3.14159265358979323846;
     p = Particles();
     params = SimParams(); // gravity only, no contact

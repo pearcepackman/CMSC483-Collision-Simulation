@@ -39,8 +39,10 @@ jobs:
         run: cmake --preset dev -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
       - name: Build
         run: cmake --build --preset dev
-      - name: Run planet_sim
-        run: ./build/dev/planet_sim
+      - name: Run planet_sim (short real runs; exit code 2 means the physics produced NaN)
+        run: |
+          ./build/dev/planet_sim --scenario figure8 --steps 2000
+          ./build/dev/planet_sim --scenario cloud --n 500 --steps 20 --backend omp --bench
       - name: Run bench_gravity (smoke run, so the benchmark can't silently break)
         run: ./build/dev/bench_gravity 500 1
       - name: Test (1 thread)

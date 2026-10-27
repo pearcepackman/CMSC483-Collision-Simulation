@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
 
 #include "config.hpp"
@@ -24,10 +25,10 @@ struct RunResult {
 };
 
 // Runs the main loop. Calls compute_accelerations() once first (the leapfrog contract),
-// then takes opts.steps leapfrog steps. At step 0 and every output_every steps it writes
-// a frame (if enabled) and an energy row (if energy_log isn't null); potential energy is
-// O(N^2) and serial, so it's only computed then. After every step it checks for NaN/Inf
-// and stops early if it finds any.
+// then takes opts.steps leapfrog steps. At step 0, every output_every steps, and the final
+// step it writes a frame (if enabled, numbered 0, 1, 2, ...) and an energy row (if
+// energy_log isn't null); potential energy is O(N^2) and serial, so it's only computed
+// then. After every step it checks for NaN/Inf and stops early if it finds any.
 RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions &opts,
                          FILE *energy_log);
 
@@ -38,6 +39,10 @@ std::size_t first_non_finite(const Particles &p);
 //   step,t,kinetic,potential,total,px,py,pz
 void write_energy_header(FILE *f);
 void write_energy_row(FILE *f, int step, double t, const Particles &p, const SimParams &params);
+
+// Closes a log file. Returns false if any write failed or the close did (e.g. disk full),
+// so a cut-off energy.csv can't pass as complete.
+bool finish_log(FILE *f);
 
 // Appends `planet` to dst, shifted by center and moving with velocity (added to each
 // particle's own velocity). Masses, radii and body ids are kept.
@@ -53,4 +58,4 @@ Particles build_planets(const Config &cfg, Backend backend);
 //   "figure8" the three-body figure-eight orbit
 //   "cloud"   n random equal-mass particles at rest in a unit sphere, from seed
 // Returns false for an unknown name or n < 1.
-bool build_scenario(const char *name, int n, unsigned seed, Particles &p, SimParams &params);
+bool build_scenario(const char *name, int n, std::uint64_t seed, Particles &p, SimParams &params);

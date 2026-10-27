@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <filesystem>
+#include <new>
 #include <string>
 
 #include <omp.h>
@@ -8,27 +9,18 @@
 #include "config.hpp"
 #include "sim.hpp"
 
-// planet_sim: set up particles (config file or built-in scenario), run the simulation,
-// write frames and an energy log, or time it with --bench. Exit codes: 0 ok,
-// 1 usage or setup error, 2 the simulation produced NaN/Inf.
-int main(int argc, char **argv) {
-    CliOptions cli;
-    std::string error;
-    if (!parse_cli(argc, argv, &cli, &error)) {
-        std::fprintf(stderr, "planet_sim: %s\n%s", error.c_str(), cli_usage());
-        return 1;
-    }
-    if (cli.help) {
-        std::printf("%s", cli_usage());
-        return 0;
-    }
+namespace {
 
+// The run itself, separated from main() so an allocation failure for a huge --n can be
+// reported cleanly instead of crashing.
+int run(const CliOptions &cli) {
     // Starting state and settings: from a config file, or a built-in scenario.
     Particles p;
     SimParams params;
     int steps = 1000;
     int output_every = 10;
-    if (!cli.config_path.empty()) {
+    const bool from_config = !cli.config_path.empty();
+    if (from_config) {
         Config cfg;
         if (!load_config(cli.config_path.c_str(), cfg)) {
             std::fprintf(stderr, "planet_sim: couldn't load config '%s'\n",
@@ -44,19 +36,15 @@ int main(int argc, char **argv) {
                      cli.scenario.c_str(), cli_usage());
         return 1;
     }
+    if ((cli.has_n || cli.has_seed) && (from_config || cli.scenario != "cloud")) {
+        std::fprintf(stderr, "planet_sim: note: --n and --seed only apply to --scenario "
+                             "cloud; ignoring them\n");
+    }
 
     // Command-line flags override the config / scenario defaults.
-    if (cli.has_steps) {
-        steps = cli.steps;
-    }
-    if (cli.has_dt) {
-        params.dt = cli.dt;
-    }
-    if (cli.has_output_every) {
-        output_every = cli.output_every;
-    }
-    if (!(params.dt > 0.0) || output_every < 1) {
-        std::fprintf(stderr, "planet_sim: dt must be > 0 and output-every >= 1\n");
+    std::string error;
+    if (!apply_overrides(cli, from_config, &params, &steps, &output_every, &error)) {
+        std::fprintf(stderr, "planet_sim: %s\n", error.c_str());
         return 1;
     }
 
@@ -82,9 +70,7 @@ int main(int argc, char **argv) {
     }
 
     RunResult result = run_simulation(p, params, opts, energy_log);
-    if (energy_log != nullptr) {
-        std::fclose(energy_log);
-    }
+    const bool log_ok = energy_log == nullptr || finish_log(energy_log);
 
     if (!result.finite) {
         std::fprintf(stderr, "planet_sim: particle %zu became NaN/Inf after step %d\n",
@@ -95,14 +81,45 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "planet_sim: writing a frame to '%s' failed\n", cli.out_dir.c_str());
         return 1;
     }
+    if (!log_ok) {
+        std::fprintf(stderr, "planet_sim: writing '%s/energy.csv' failed (disk full?)\n",
+                     cli.out_dir.c_str());
+        return 1;
+    }
+    // Report what actually ran (opts, not cli), so a wrong setup can't print a right label.
+    const int threads = opts.backend == BACKEND_SERIAL ? 1 : omp_get_max_threads();
     if (cli.bench) {
         // One line, easy for scripts/bench.py (#20) to parse.
         double per_step = steps > 0 ? result.seconds / steps : 0.0;
         std::printf("bench backend=%s n=%zu threads=%d steps=%d seconds_per_step=%.6g\n",
-                    backend_name(cli.backend), p.size(), omp_get_max_threads(), steps, per_step);
+                    backend_name(opts.backend), p.size(), threads, steps, per_step);
     } else {
-        std::printf("ran %d steps of %zu particles (%s) in %.3f s\n", result.steps_done, p.size(),
-                    backend_name(cli.backend), result.seconds);
+        std::printf("ran %d steps of %zu particles (%s, %d threads) in %.3f s\n", result.steps_done,
+                    p.size(), backend_name(opts.backend), threads, result.seconds);
     }
     return 0;
+}
+
+} // namespace
+
+// planet_sim: set up particles (config file or built-in scenario), run the simulation,
+// write frames and an energy log, or time it with --bench. Exit codes: 0 ok,
+// 1 usage or setup error, 2 the simulation produced NaN/Inf.
+int main(int argc, char **argv) {
+    CliOptions cli;
+    std::string error;
+    if (!parse_cli(argc, argv, &cli, &error)) {
+        std::fprintf(stderr, "planet_sim: %s\n%s", error.c_str(), cli_usage());
+        return 1;
+    }
+    if (cli.help) {
+        std::printf("%s", cli_usage());
+        return 0;
+    }
+    try {
+        return run(cli);
+    } catch (const std::bad_alloc &) {
+        std::fprintf(stderr, "planet_sim: out of memory (try a smaller --n)\n");
+        return 1;
+    }
 }

@@ -36,7 +36,7 @@ endfunction()
 
 add_cli_test(Cli.OrbitBench 0
     ARGS --scenario orbit --steps 1000 --bench
-    OUTPUT "bench backend=serial n=2 threads=[0-9]+ steps=1000 seconds_per_step=")
+    OUTPUT "bench backend=serial n=2 threads=1 steps=1000 seconds_per_step=")
 add_cli_test(Cli.CloudBenchOmp 0
     ARGS --scenario cloud --n 200 --steps 20 --backend omp --bench
     OUTPUT "bench backend=omp n=200 ")
@@ -53,3 +53,12 @@ add_cli_test(Cli.BadFlagIsUsageError 1
 add_cli_test(Cli.UnknownScenarioIsUsageError 1
     ARGS --scenario nope
     OUTPUT "unknown scenario 'nope'")
+add_cli_test(Cli.BlowUpExitsWithCode2 2
+    ARGS --scenario orbit --dt 1e300 --steps 5
+    OUTPUT "became NaN/Inf after step 1")
+add_cli_test(Cli.HipBackendNotBuiltYet 1
+    ARGS --scenario orbit --backend hip
+    OUTPUT "hip backend isn't built yet")
+add_cli_test(Cli.InfiniteDtIsUsageError 1
+    ARGS --scenario orbit --dt inf
+    OUTPUT "--dt needs a finite number > 0")

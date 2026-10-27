@@ -5,6 +5,9 @@
 # ARGS uses '|' as the separator: a ';' list would be split into separate arguments by
 # add_test before reaching this script.
 string(REPLACE "|" ";" ARGS "${ARGS}")
+if(DEFINED MUST_NOT_EXIST)
+    file(REMOVE_RECURSE "${MUST_NOT_EXIST}") # a leftover from an earlier failed run
+endif()
 execute_process(COMMAND ${CMD} ${ARGS} RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
 message("${out}${err}")
 if(NOT code EQUAL EXPECT_EXIT)

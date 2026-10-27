@@ -83,7 +83,16 @@ TEST(Cli, RejectsBadInput) {
         {"--scenario", "orbit", "--dt", "0"},         // dt must be > 0
         {"--scenario", "orbit", "--output-every", "0"},
         {"--scenario", "cloud", "--n", "0"},
+        {"--scenario", "cloud", "--n", "20000000"},   // over the 10M cap (~1 GB of particles)
         {"--scenario", "orbit", "--backend", "cuda"}, // unknown backend
+        {"--scenario", "orbit", "--backend", "hip"},  // not built yet (#25)
+        {"--scenario", "orbit", "--dt", "inf"},       // must be finite
+        {"--scenario", "orbit", "--dt", "1e999"},     // overflows to infinity
+        {"--scenario", "orbit", "--dt", "nan"},
+        {"--scenario", "orbit", "--dt", "-1"},
+        {"--scenario", "cloud", "--seed", "-1"},
+        {"--scenario", "cloud", "--seed", "99999999999999999999"}, // out of range
+        {"--scenario", "orbit", "--out", ""},
     };
     for (const auto &args : bad) {
         CliOptions o;
@@ -101,6 +110,51 @@ TEST(Cli, UnknownFlagIsReportedAsUnknownEvenAtTheEnd) {
     EXPECT_NE(err.find("unknown flag '--bogus'"), std::string::npos) << err;
     EXPECT_FALSE(parse({"--scenario"}, &o, &err));
     EXPECT_NE(err.find("missing value after --scenario"), std::string::npos) << err;
+}
+
+TEST(Cli, LargeSeedsStayDistinct) {
+    // Seeds above 32 bits must not wrap (4294967297 would become 1 in 32 bits).
+    CliOptions o;
+    std::string err;
+    ASSERT_TRUE(parse({"--scenario", "cloud", "--seed", "4294967297"}, &o, &err)) << err;
+    EXPECT_EQ(o.seed, 4294967297ULL);
+}
+
+TEST(Cli, OverridesReplaceConfigValuesOnlyWhenGiven) {
+    SimParams params;
+    params.dt = 0.5;
+    int steps = 100, output_every = 10;
+    CliOptions none;
+    std::string err;
+    ASSERT_TRUE(apply_overrides(none, true, &params, &steps, &output_every, &err)) << err;
+    EXPECT_EQ(params.dt, 0.5); // nothing given: config values stay
+    EXPECT_EQ(steps, 100);
+    EXPECT_EQ(output_every, 10);
+
+    CliOptions all;
+    ASSERT_TRUE(parse({"--config", "x.cfg", "--dt", "0.25", "--steps", "7", "--output-every", "3"},
+                      &all, &err))
+        << err;
+    ASSERT_TRUE(apply_overrides(all, true, &params, &steps, &output_every, &err)) << err;
+    EXPECT_EQ(params.dt, 0.25);
+    EXPECT_EQ(steps, 7);
+    EXPECT_EQ(output_every, 3);
+}
+
+TEST(Cli, OverridesRejectUnusableSettings) {
+    CliOptions none;
+    std::string err;
+    SimParams params;
+    params.dt = 0.1;
+    int steps = 0, output_every = 10;
+    // A config that sets no steps would "succeed" without simulating anything.
+    EXPECT_FALSE(apply_overrides(none, true, &params, &steps, &output_every, &err));
+    EXPECT_NE(err.find("steps"), std::string::npos) << err;
+
+    steps = 10;
+    params.dt = 0.0; // config without dt
+    EXPECT_FALSE(apply_overrides(none, true, &params, &steps, &output_every, &err));
+    EXPECT_NE(err.find("dt"), std::string::npos) << err;
 }
 
 TEST(Cli, HelpNeedsNothingElse) {
@@ -122,6 +176,17 @@ TEST(Sim, FindsFirstNonFiniteParticle) {
     EXPECT_EQ(first_non_finite(p), 1u);
 }
 
+TEST(Sim, ChecksEveryPositionAndVelocityField) {
+    // Each of the six fields on its own must be caught.
+    for (int field = 0; field < 6; ++field) {
+        Particles p;
+        p.resize(4);
+        std::vector<double> *fields[6] = {&p.x, &p.y, &p.z, &p.vx, &p.vy, &p.vz};
+        (*fields[field])[2] = std::numeric_limits<double>::quiet_NaN();
+        EXPECT_EQ(first_non_finite(p), 2u) << "field " << field;
+    }
+}
+
 TEST(Sim, StopsEarlyOnNaN) {
     SimParams params;
     Particles p = orbit(&params);
@@ -132,6 +197,19 @@ TEST(Sim, StopsEarlyOnNaN) {
     EXPECT_FALSE(r.finite);
     EXPECT_EQ(r.bad_particle, 1u);
     EXPECT_EQ(r.steps_done, 0); // caught before the first step
+}
+
+TEST(Sim, StopsAtTheStepThatBlowsUp) {
+    // A finite start that overflows during step 1: the check inside the loop must stop
+    // the run right there, not carry on or only check every few steps.
+    SimParams params;
+    Particles p = orbit(&params);
+    params.dt = 1e300; // positions overflow to infinity on the first drift
+    RunOptions opts;
+    opts.steps = 50;
+    RunResult r = run_simulation(p, params, opts, nullptr);
+    EXPECT_FALSE(r.finite);
+    EXPECT_EQ(r.steps_done, 1);
 }
 
 // ---- The loop ----
@@ -184,9 +262,45 @@ TEST(Sim, EnergyLogHasOneRowPerOutputStep) {
                   8)
             << lines[row];
         EXPECT_EQ(step, static_cast<int>(row - 1) * 10);
+        EXPECT_LE(std::fabs(t - step * params.dt), 1e-15 * (1.0 + std::fabs(t)));
         EXPECT_LE(std::fabs(e - (-0.125)), 1e-5 * 0.125);
         EXPECT_LE(std::fabs(ke + pe - e), 1e-14);
+        // Momentum starts at exactly zero and the mirror-image pair keeps it there.
+        EXPECT_LE(std::fabs(px) + std::fabs(py) + std::fabs(pz), 1e-15);
     }
+}
+
+TEST(Sim, LogsTheFinalStepEvenIfNotAMultiple) {
+    // 105 steps every 10: rows at 0, 10, ..., 100 and the final step 105, so the
+    // energy over the whole run can be measured.
+    SimParams params;
+    Particles p = orbit(&params);
+    FILE *log = std::tmpfile();
+    ASSERT_NE(log, nullptr);
+    write_energy_header(log);
+    RunOptions opts;
+    opts.steps = 105;
+    opts.output_every = 10;
+    ASSERT_TRUE(run_simulation(p, params, opts, log).finite);
+    std::vector<std::string> lines = read_lines(log);
+    std::fclose(log);
+    ASSERT_EQ(lines.size(), 1u + 12u);
+    EXPECT_EQ(lines.back().rfind("105,", 0), 0u) << lines.back();
+}
+
+TEST(Sim, FinishLogReportsWriteErrors) {
+    // /dev/full accepts the open but fails every write ("disk full").
+    FILE *f = std::fopen("/dev/full", "w");
+    if (f == nullptr) {
+        GTEST_SKIP() << "/dev/full not available";
+    }
+    write_energy_header(f);
+    EXPECT_FALSE(finish_log(f)); // must not report success for a truncated file
+
+    FILE *ok = std::tmpfile();
+    ASSERT_NE(ok, nullptr);
+    write_energy_header(ok);
+    EXPECT_TRUE(finish_log(ok));
 }
 
 // ---- Setup ----

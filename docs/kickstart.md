@@ -69,12 +69,12 @@ These are fixed in the headers from #6. Breaking one causes silent physics bugs,
 
 ## 4. Collision parameters that worked (preview)
 
-Simulation units, G = 1. These ran stable (no NaN, energy only ever decreased) for 6,000 steps with 1,458 particles.
+Simulation units, G = 1. These ran stable (no NaN, energy only ever decreased) for 6,000 steps with 1,458 particles: a **big planet of radius 1** (1,021 particles, mass 1.02) and a **small one of radius 0.75** (437 particles, mass 0.44).
 
 | Setting | Value | How it was chosen |
 |---|---|---|
-| Particle mass | `1e-3` | ~1,000 particles per radius-1 planet → planet mass ≈ 1 |
-| Lattice spacing | `0.161` | simple cubic grid inside radius 1 gives ~1,000 particles; particles start just touching |
+| Particle mass | `1e-3` | so a radius-1 planet (~1,000 particles) has mass ≈ 1 |
+| Lattice spacing | `0.161` | simple cubic grid: 1,021 particles fit in radius 1, 437 in radius 0.75; particles start just touching |
 | Particle radius | `spacing / 2 = 0.0805` | |
 | Contact stiffness `k` | `20` | gravity squeezes overlaps to a few % of the radius |
 | Contact damping `c` | `0.05` | coefficient of restitution ~0.5 ("rubble, not rubber") |
@@ -85,7 +85,7 @@ Simulation units, G = 1. These ran stable (no NaN, energy only ever decreased) f
 Formulas, if you change something:
 - Spring period: `T = 2π·sqrt(m_eff / k)`, keep `dt ≤ T/10`.
 - Damping for a target restitution `e`: `ζ = -ln(e) / sqrt(π² + ln²(e))`, `c = 2ζ·sqrt(m_eff·k)` (e = 0.5 → c ≈ 0.043).
-- Escape speed of the pair: `v_esc = sqrt(2·G·(M1 + M2) / (R1 + R2))` ≈ 1.29 for the preview planets. Impact at 0.9 merged; at 2.6 (2x escape) it sprayed debris.
+- Escape speed of the pair: `v_esc = sqrt(2·G·(M1 + M2) / (R1 + R2))` = sqrt(2 · 1.458 / 1.75) ≈ 1.29 for the preview planets (two radius-1, mass-1 planets would give √2 ≈ 1.41). Impact at 0.9 merged; at 2.6 (2x escape) it sprayed debris.
 
 **Preview code (never reviewed or tested; needs the tests your issues list):**
 
