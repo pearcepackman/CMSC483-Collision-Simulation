@@ -87,6 +87,26 @@ _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work
 
 ---
 
+## The simulation program
+
+### `planet_sim`: loop, outputs, built-in scenarios (Oct 2026, #14)
+**Decisions:**
+- **One loop** ([`run_simulation()`](../src/sim.cpp)): `compute_accelerations()` once (the leapfrog contract), then leapfrog steps. A frame and an energy row at step 0, every `output_every` steps, and the final step (so the log always covers the whole run); potential energy is O(N²) and serial, so it's never computed on other steps. Frames are numbered 0, 1, 2, ... in output order.
+- **Command-line overrides** live in [`apply_overrides()`](../src/cli.cpp), which also refuses unusable runs: a config with no `steps` (a 0-step run would "succeed" doing nothing), a non-finite or non-positive `dt`. Typos like `--dt inf` are usage errors (exit 1), not "the physics exploded" (exit 2).
+- **NaN/Inf check after every step** (one O(N) pass, negligible next to O(N²) gravity). The run stops at the first bad particle and exits with code 2, so "the physics exploded" can't look like success.
+- **Built-in scenarios** (`--scenario orbit|figure8|cloud`) so the program runs before the config loader (#13) and planet generator (#9) exist: benchmarks (#20) and tests (#16) can start now. Collisions come from config files.
+- **Planets are built at rest at the origin**, relaxed, then placed with `place_planet()` (the #15 contract), and forces are recomputed for the combined system before stepping.
+- **`--bench`** writes nothing and prints one line for scripts: `bench backend=omp n=5000 threads=6 steps=20 seconds_per_step=0.0121`.
+- **Exit codes:** 0 ok, 1 usage/setup error, 2 NaN/Inf.
+
+**Evidence:** [tests/test_sim.cpp](../tests/test_sim.cpp) checks the loop gives the same bits as hand-written leapfrog steps, the energy log's rows and conservation, NaN detection, CLI parsing; CTest also runs the real `planet_sim` binary and checks exit codes and output ([tests/CMakeLists.txt](../tests/CMakeLists.txt)). First end-to-end OpenMP number through the real program: a 5,000-particle cloud, 0.077 s/step serial vs 0.012 s/step with 6 threads (6.4x), Ryzen 5 7600X, `release`.
+
+**Lessons:**
+- The first version of the program-level tests passed two error cases *for the wrong reason* (CMake split the argument list, so every run failed with "missing value"). Each error test now matches its specific message, which then caught a real bug: a trailing unknown flag was reported as "missing value".
+- Review deliberately broke 34 copies of this code and **17 still passed the tests**: the gaps were at the program level (overrides, the NaN exit code, a mid-run NaN, `--dt inf`). After adding those tests (including one that blows up during step 1 and a `/dev/full` "disk full" test for the energy log), they're covered. Also caught: CI still ran `planet_sim` with no arguments, which became a usage error and blocked the PR. Branch protection did its job.
+
+---
+
 ## Time integration
 
 ### Leapfrog (kick-drift-kick) instead of Euler (Oct 2026, #8)

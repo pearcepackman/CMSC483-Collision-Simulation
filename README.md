@@ -14,7 +14,7 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 |---|---|---|
 | 0 | Repo, build system, CI | Done |
 | 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity + leapfrog done; planet generation, frame output, rendering left |
-| 2 | Serial planet collision + first video | Not started |
+| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI done; planets, contact, config, relaxation, video left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | Not started |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
@@ -39,10 +39,21 @@ Build, test, run:
 ```bash
 cmake --preset dev && cmake --build --preset dev
 ctest --preset dev
-./build/dev/planet_sim
+./build/dev/planet_sim --scenario figure8 --steps 20000
 ```
 
 GoogleTest downloads automatically during the first configure.
+
+`planet_sim` usage (`--help` for all flags):
+
+```bash
+planet_sim --scenario orbit|figure8|cloud [--n N] [--seed S]   # built-in setups, no files needed
+planet_sim --config configs/head_on.cfg --out frames/run       # planets from a scenario file
+           [--backend serial|omp] [--steps N] [--dt h] [--output-every k]
+planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
+```
+
+`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,total,px,py,pz`). Exit codes: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf. `--config` and frame output need #13 and #10.
 
 Measure the OpenMP speedup (release build, threads pinned to cores):
 
@@ -76,7 +87,7 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs .venv/bin/clang-format -i
 ```
 src/        simulator source (particles, physics, backends, CLI)
 tests/      GoogleTest suites: physics correctness and backend agreement
-docs/       tooling decisions and the parallel-design notes behind the presentation
+docs/       tooling decisions, design notes (presentation), kickstart guide for new work
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
