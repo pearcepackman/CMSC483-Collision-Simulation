@@ -54,14 +54,28 @@ TEST(StubsDeathTest, NotImplementedAborts) {
     EXPECT_EXIT(not_implemented("demo"), testing::KilledBySignal(SIGABRT), "not implemented: demo");
 }
 
-// The HIP branch aborts until #25 implements it; update this test then.
-TEST(StubsDeathTest, GravityHipBackendNotImplementedYet) {
+TEST(Backend, AvailableMatchesBuild) {
+    EXPECT_TRUE(backend_available(BACKEND_SERIAL));
+    EXPECT_TRUE(backend_available(BACKEND_OMP));
+#ifdef SIM_HAVE_HIP
+    EXPECT_TRUE(backend_available(BACKEND_HIP));
+#else
+    EXPECT_FALSE(backend_available(BACKEND_HIP));
+#endif
+    EXPECT_FALSE(backend_available(static_cast<Backend>(3)));
+}
+
+#ifndef SIM_HAVE_HIP
+// Without ENABLE_HIP the HIP branch must abort, not silently skip gravity. (In HIP
+// builds it runs on the GPU: tests/gpu/.)
+TEST(StubsDeathTest, GravityHipNotBuiltAborts) {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     Particles p;
     p.resize(2);
     SimParams params;
-    EXPECT_DEATH(compute_gravity(p, params, BACKEND_HIP), "not implemented: compute_gravity_hip");
+    EXPECT_DEATH(compute_gravity(p, params, BACKEND_HIP), "hip backend not built");
 }
+#endif
 
 // A bad Backend value (e.g. from a cast) must abort, not silently skip gravity and
 // leave the previous step's accelerations in place.

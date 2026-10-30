@@ -41,7 +41,7 @@ bool takes_value(const char *flag) {
 const char *cli_usage() {
     return "usage: planet_sim (--config <file> | --scenario orbit|figure8|cloud [--n N] "
            "[--seed S])\n"
-           "                  [--backend serial|omp] [--steps N] [--dt h] [--out <dir>]\n"
+           "                  [--backend serial|omp|hip] [--steps N] [--dt h] [--out <dir>]\n"
            "                  [--output-every k] [--bench] [--help]\n"
            "  --config        scenario file (flags given here override it); needs the config\n"
            "                  loader (#13), until then it stops with 'not implemented'\n"
@@ -88,11 +88,12 @@ bool parse_cli(int argc, const char *const *argv, CliOptions *opts, std::string 
             opts->out_dir = value;
         } else if (std::strcmp(flag, "--backend") == 0) {
             if (!backend_from_name(value, &opts->backend)) {
-                *error = std::string("unknown backend '") + value + "' (serial or omp)";
+                *error = std::string("unknown backend '") + value + "' (serial, omp or hip)";
                 return false;
             }
-            if (opts->backend == BACKEND_HIP) { // compute_gravity would abort
-                *error = "the hip backend isn't built yet (#25); use serial or omp";
+            if (!backend_available(opts->backend)) { // compute_gravity would abort
+                *error = std::string("this build has no ") + value +
+                         " backend; build with: cmake --preset hip";
                 return false;
             }
         } else if (std::strcmp(flag, "--n") == 0) {

@@ -41,7 +41,7 @@ For a web developer, the closest mapping is:
   | `release` | default | Benchmarks: `-O3 -march=native` |
   | `asan` | clang | Debug + AddressSanitizer + UBSan (memory bugs, UB) |
   | `tsan` | clang + libomp | ThreadSanitizer (data races in OpenMP code) |
-  | `hip` | ROCm clang | `-DENABLE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1200` (added with milestone 4) |
+  | `hip` | ROCm clang (HIP) + system C++ compiler | `-DENABLE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1200;gfx1036` (the RX 9060 XT and the Ryzen's integrated GPU: ROCm aborts a launch if any visible GPU lacks code, see docs/notes.md), compiler and ROCm root pinned to `/opt/rocm`. `ctest --preset hip` also runs the `gpu`-labelled tests (they skip if no GPU is visible) |
 
 - **GoogleTest** via `FetchContent`, pinned to **v1.17.0** (latest confirmed release; needs C++17). Pin a tag, never `main`.
 - Export `compile_commands.json` (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`) so editors (clangd / VS Code) understand the code.
@@ -51,8 +51,13 @@ For a web developer, the closest mapping is:
 ```bash
 sudo apt install build-essential cmake ninja-build clang libomp-dev python3-venv
 pip install clang-format==<pinned>   # pinned version: see section 3
-# GPU backend: only on a machine with a ROCm-supported AMD GPU (Arch: sudo pacman -S rocm-hip-sdk)
+# GPU backend: only on a machine with a ROCm-supported AMD GPU.
+# Arch: sudo pacman -S hip-runtime-amd rocminfo rocm-cmake   (~7 GB, mostly ROCm's LLVM;
+#       the full rocm-hip-sdk adds math/ML libraries we don't use)
+# Check: /opt/rocm/bin/rocminfo | grep -E "Marketing|gfx"   -> should list gfx1200
 ```
+
+**ROCm on Arch, two gotchas:** `/etc/profile.d/rocm.sh` sets `ROCM_PATH` only in login shells, and without it ROCm's clang guesses its root as `/opt/rocm/lib` and can't find `hip/hip_runtime.h`. The `hip` preset pins `CMAKE_HIP_COMPILER`, `CMAKE_HIP_COMPILER_ROCM_ROOT` and `--rocm-path=/opt/rocm`, so CMake builds work from any shell; for running `hipcc` by hand, open a new login shell or pass `--rocm-path=/opt/rocm`. ROCm also lists the CPU's integrated GPU as a device; the backend picks the one with the most compute units among the architectures it was built for (see docs/notes.md). A different GPU needs its `gfx` name (from `rocminfo`) added to `CMAKE_HIP_ARCHITECTURES` in the preset.
 
 ### macOS setup (secondary)
 
@@ -90,7 +95,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is co
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
 | `tsan` | clang + libomp + Archer (found with `find /usr/lib -name 'libarcher.so*'`, loaded via `OMP_TOOL_LIBRARIES`), `tsan` preset at 4 threads | Data races in OpenMP loops. **Blocking** (#21). It first runs a **canary**, [.github/ci/tsan_canary.cpp](../.github/ci/tsan_canary.cpp), a deliberately racy loop; if TSan doesn't report it, the job fails, so a broken race checker can't pass silently. Locally: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' \| head -n 1) ctest --preset tsan`. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
-| `hip-compile` | Inside an AMD ROCm devel container (Ubuntu 24.04), `-DENABLE_HIP=ON`, explicit `CMAKE_HIP_ARCHITECTURES=gfx1200` (CMake can't detect a GPU that isn't there) | HIP syntax/type errors |
+| `hip-compile` | In the `rocm/dev-ubuntu-24.04:7.2.4` container (same ROCm as the dev PC): `hip` preset (explicit architectures, since CMake can't detect a GPU that isn't there), CPU tests with `-LE gpu`, and `planet_sim --backend hip` must exit 1 with "no usable GPU found" | HIP syntax/type errors and warnings (`-Werror` applies to HIP too), a HIP build breaking CPU code, a crash instead of a clean error without a GPU |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |
 
 Extras:

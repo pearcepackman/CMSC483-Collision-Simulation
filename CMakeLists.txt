@@ -35,15 +35,20 @@ endif()
 find_package(OpenMP REQUIRED)
 
 if(ENABLE_HIP)
+    # CMAKE_HIP_ARCHITECTURES (e.g. gfx1200 for the RX 9060 XT) comes from the hip preset.
     enable_language(HIP)
-    message(STATUS "HIP enabled (backend arrives in milestone 4)")
+    set(CMAKE_HIP_STANDARD 17)
+    set(CMAKE_HIP_STANDARD_REQUIRED ON)
+    set(CMAKE_HIP_EXTENSIONS OFF)
+    message(STATUS "HIP enabled for ${CMAKE_HIP_ARCHITECTURES}")
 endif()
 
-# Warnings for our own C++ targets only; third-party code (GoogleTest) and HIP sources are left alone.
+# Warnings for our own targets (C++ and HIP; HIP is compiled by clang, so it takes the
+# same flags). Third-party code (GoogleTest) is left alone.
 function(set_project_warnings target)
-    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wshadow;-Wconversion>")
+    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX,HIP>:-Wall;-Wextra;-Wshadow;-Wconversion>")
     if(WARNINGS_AS_ERRORS)
-        target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Werror>")
+        target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX,HIP>:-Werror>")
     endif()
 endfunction()
 
@@ -55,6 +60,14 @@ add_library(sim_core ${SIM_CORE_SOURCES})
 target_include_directories(sim_core PUBLIC src)
 target_link_libraries(sim_core PUBLIC OpenMP::OpenMP_CXX)
 set_project_warnings(sim_core)
+if(ENABLE_HIP)
+    target_sources(sim_core PRIVATE src/gravity_hip.hip)
+    target_compile_definitions(sim_core PUBLIC SIM_HAVE_HIP)
+    # The kernel's GPU list, so hip_init never picks a GPU without code for it (that
+    # aborts inside the HIP runtime). Commas: a ';' would split the definition.
+    string(REPLACE ";" "," sim_hip_archs "${CMAKE_HIP_ARCHITECTURES}")
+    target_compile_definitions(sim_core PRIVATE "SIM_HIP_ARCHS=\"${sim_hip_archs}\"")
+endif()
 
 add_executable(planet_sim src/main.cpp)
 target_link_libraries(planet_sim PRIVATE sim_core)

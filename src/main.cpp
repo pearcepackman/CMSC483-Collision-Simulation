@@ -48,6 +48,19 @@ int run(const CliOptions &cli) {
         return 1;
     }
 
+#ifdef SIM_HAVE_HIP
+    // Pick the GPU up front, so "no GPU" is a clean error instead of an abort mid-run.
+    // The device goes to stderr so the --bench line on stdout stays one parseable line.
+    if (cli.backend == BACKEND_HIP) {
+        std::string info;
+        if (!hip_init(&info)) {
+            std::fprintf(stderr, "planet_sim: --backend hip: %s\n", info.c_str());
+            return 1;
+        }
+        std::fprintf(stderr, "planet_sim: hip device: %s\n", info.c_str());
+    }
+#endif
+
     RunOptions opts;
     opts.backend = cli.backend;
     opts.steps = steps;
@@ -87,7 +100,11 @@ int run(const CliOptions &cli) {
         return 1;
     }
     // Report what actually ran (opts, not cli), so a wrong setup can't print a right label.
-    const int threads = opts.backend == BACKEND_SERIAL ? 1 : omp_get_max_threads();
+    // CPU threads computing gravity: OpenMP's team, 1 for serial, 0 for the GPU (so a
+    // script grouping by thread count can't mistake a GPU run for a 1-thread CPU run).
+    const int threads = opts.backend == BACKEND_OMP      ? omp_get_max_threads()
+                        : opts.backend == BACKEND_SERIAL ? 1
+                                                         : 0;
     if (cli.bench) {
         // One line, easy for scripts/bench.py (#20) to parse.
         double per_step = steps > 0 ? result.seconds / steps : 0.0;

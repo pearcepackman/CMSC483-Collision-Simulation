@@ -83,7 +83,28 @@ Across four runs, 6 threads gave 5.84–6.03x over 1-thread OpenMP. Serial took 
 - **Measurement lesson:** the first runs showed "123% efficiency." That was noise, not magic: with the `powersave` governor, CPU boost and other programs running, the clock speed drifts between measurements. The benchmark now interleaves configurations each round and reports speedup against 1-thread OpenMP as well as serial.
 - **1-thread OpenMP is 3–16% faster than serial** (varies run to run) with identical math and bit-identical results. The compiled code shows why: serial's inner loop re-loads the `y`, `z` and `mass` array addresses from the `Particles` struct on every iteration (the compiler can't prove the writes to `ax/ay/az` don't change them), while the OpenMP version copies them into local pointers that stay in registers. The serial reference is deliberately left unoptimized (CLAUDE.md).
 
-_Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` (consumer GPUs run `double` many times slower)._
+### HIP gravity: naive double kernel (Oct 2026, #24, #25)
+**Decision:** [`compute_gravity_hip()`](../src/gravity_hip.hip) runs one GPU thread per particle (256 per block), each looping over all others in global memory with the same formula and summation order as serial, in `double`. The GPU copies of the arrays (Struct-of-Arrays) are kept between calls and grow only when N does; positions and masses go up and accelerations come back on **every call**. HIP is optional: `cmake --preset hip` (`ENABLE_HIP`, `gfx1200`); other builds report `--backend hip` as not built.
+**Device choice:** ROCm lists two devices on the dev PC: the RX 9060 XT (`gfx1200`) and the Ryzen 7600X's integrated GPU (`gfx1036`). `hip_init()` picks, with the pure function `pick_gpu()`, the visible device with the most compute units **among the architectures the kernel was compiled for** (`CMAKE_HIP_ARCHITECTURES`, passed in as `SIM_HIP_ARCHS`), so the discrete card wins regardless of ordering and `HIP_VISIBLE_DEVICES` overrides. The `hip` preset compiles for **both** chips: review found that with ROCm 7.2, if *any* visible GPU lacks code for a kernel, the first launch aborts inside the HIP runtime (exit 134, no error our checks can catch), even when the chosen GPU has code. A GPU outside the list is never chosen; if it's the only one, or there's no GPU at all, `planet_sim` exits 1 with a message and GPU tests skip. `pick_gpu` is unit-tested on the CPU ([tests/test_gpu_select.cpp](../tests/test_gpu_select.cpp)), since on this PC "first device" and "best device" are the same card and GPU tests alone can't tell them apart. `hipSetDevice` is per host thread, so `compute_gravity_hip` sets it on every call. In the `--bench` line, hip runs report `threads=0` (no CPU threads compute gravity).
+**Practical size:** one kernel launch per step, measured 0.89 s/step at N = 65,536 and 7.4 s at 200,000 (O(N²)). The CLI's 10M cap would mean hours per launch on the GPU that also drives the display, so keep `--backend hip` to roughly N ≤ 1e5 until #26 and #32 speed it up.
+**Why double first:** it matches the serial reference to 1e-12, so correctness is checked strictly before any precision trade-off. `float` is #32.
+**Evidence (correctness):** [tests/gpu/test_backends_match_gpu.cpp](../tests/gpu/test_backends_match_gpu.cpp) (label `gpu`): hand-computed pair to 1e-14; one particle with eps = 0 gets exactly zero (self-pull skipped, else NaN); N = 2, 255, 256, 257, 1000 and 4096 match serial within 1e-12 relative; cached buffers survive grow/shrink/free; 10 leapfrog steps track serial positions to 1e-10. Eight deliberately broken kernels (no self-skip, blocks rounded down, float math, swapped axis, stale mass after reuse, eps not squared, missing copy-back, buffers never regrown) were all caught: six by tests, one by the HIP error check, one by `-Werror`.
+**Evidence (speed):** whole `planet_sim --bench` step (gravity + leapfrog, including the copies), `cloud` scenario, OpenMP from the `release` build with 6 threads pinned to cores:
+
+| N | OpenMP 6 threads (s/step) | HIP naive double (s/step) | HIP vs OpenMP |
+|---|---|---|---|
+| 2,000 | 0.0018 | 0.0030 | 0.6x (slower) |
+| 10,000 | 0.044 | 0.034 | 1.3x |
+| 30,000 | 0.41 | 0.20 | 2.1x |
+
+**Why it looks like this:**
+- **Double precision is slow on this card.** Consumer RDNA GPUs run `double` at a small fraction of `float` speed. A scratch probe of the kernel alone at N = 10,000 took 25 ms in `double` vs 2.0 ms in `float`, so in `double` the GPU only modestly beats 6 CPU cores. #32 measures the `float` version properly.
+- **Small N loses.** At 2,000 particles the fixed costs (kernel launch, seven host↔device copies per step) outweigh the math; the GPU only pays off as N² grows. #30 removes the per-step copies.
+- **No data reuse yet.** Every thread reads every other particle from global memory; #26 (shared-memory tiles) loads each block of particles once and shares it.
+
+**Build gotcha (Arch ROCm 7.2):** the ROCm clang guesses its install root as `/opt/rocm/lib` and can't find `hip/hip_runtime.h`; the `hip` preset passes `--rocm-path=/opt/rocm` and pins the compiler and ROCm root so it works from any shell.
+
+_Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` on the GPU._
 
 ---
 
