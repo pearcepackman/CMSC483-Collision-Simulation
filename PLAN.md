@@ -112,6 +112,8 @@ planet-collision/
 │   ├── test_conservation.cpp
 │   ├── test_backends_match.cpp
 │   └── gpu/                 ← GPU tests: separate binary, label `gpu`, only with ENABLE_HIP
+├── viewer/
+│   └── planet_view.cpp      ← live 3D window (raylib), only built with ENABLE_VIEWER
 ├── configs/                 ← scenario files (head-on, grazing, Theia-like)
 ├── scripts/
 │   ├── render.py            ← frames → images → video

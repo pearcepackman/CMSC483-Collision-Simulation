@@ -24,11 +24,22 @@ struct RunResult {
     double seconds = 0.0;         // wall time of the step loop
 };
 
-// Runs the main loop. Calls compute_accelerations() once first (the leapfrog contract),
-// then takes opts.steps leapfrog steps. At step 0, every output_every steps, and the final
-// step it writes a frame (if enabled, numbered 0, 1, 2, ...) and an energy row (if
-// energy_log isn't null); potential energy is O(N^2) and serial, so it's only computed
-// then. After every step it checks for NaN/Inf and stops early if it finds any.
+// Checks the starting state for NaN/Inf, then computes the accelerations for it (the
+// leapfrog contract: a(t = 0) before the first step). Returns the first non-finite
+// particle, or p.size() if the state is ready to step; on a bad state it computes nothing.
+std::size_t sim_init(Particles &p, const SimParams &params, Backend backend);
+
+// One leapfrog step on `backend`, then the NaN/Inf check. Returns the first non-finite
+// particle, or p.size(). The backend may differ from the previous call (the viewer
+// switches live): all state lives in Particles on the host, and every backend computes
+// the same accelerations, so a step only depends on the backend through rounding.
+std::size_t sim_step(Particles &p, const SimParams &params, Backend backend);
+
+// Runs the main loop with sim_init and sim_step: takes opts.steps leapfrog steps. At
+// step 0, every output_every steps, and the final step it writes a frame (if enabled,
+// numbered 0, 1, 2, ...) and an energy row (if energy_log isn't null); potential energy
+// is O(N^2) and serial, so it's only computed then. After every step it checks for
+// NaN/Inf and stops early if it finds any.
 RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions &opts,
                          FILE *energy_log);
 

@@ -247,6 +247,82 @@ TEST(Sim, MatchesHandWrittenLeapfrogLoop) {
     }
 }
 
+// ---- One step at a time (the viewer's loop, #45) ----
+
+TEST(SimStep, MatchesRunSimulation) {
+    SimParams params;
+    Particles via_run = orbit(&params);
+    Particles via_steps = orbit(&params);
+    RunOptions opts;
+    opts.steps = 300;
+    ASSERT_TRUE(run_simulation(via_run, params, opts, nullptr).finite);
+
+    ASSERT_EQ(sim_init(via_steps, params, BACKEND_SERIAL), via_steps.size());
+    for (int s = 0; s < 300; ++s) {
+        ASSERT_EQ(sim_step(via_steps, params, BACKEND_SERIAL), via_steps.size()) << "step " << s;
+    }
+    for (std::size_t i = 0; i < 2; ++i) { // same code path, so identical bits
+        EXPECT_EQ(via_steps.x[i], via_run.x[i]);
+        EXPECT_EQ(via_steps.y[i], via_run.y[i]);
+        EXPECT_EQ(via_steps.vx[i], via_run.vx[i]);
+        EXPECT_EQ(via_steps.vy[i], via_run.vy[i]);
+    }
+}
+
+TEST(SimStep, InitRejectsNonFiniteInputWithoutComputing) {
+    SimParams params;
+    Particles p = orbit(&params);
+    p.z[1] = std::numeric_limits<double>::infinity();
+    p.ax[0] = 42.0; // must be left alone: nothing is computed from a bad state
+    EXPECT_EQ(sim_init(p, params, BACKEND_SERIAL), 1u);
+    EXPECT_EQ(p.ax[0], 42.0);
+}
+
+TEST(SimStep, InitComputesStartingAccelerations) {
+    SimParams params;
+    Particles p = orbit(&params);
+    ASSERT_EQ(sim_init(p, params, BACKEND_SERIAL), p.size());
+    // Orbit: masses 0.5 at x = -0.5 and 0.5, so each pulls the other with 0.5 / 1^2.
+    EXPECT_NEAR(p.ax[0], 0.5, 1e-12);
+    EXPECT_NEAR(p.ax[1], -0.5, 1e-12);
+}
+
+TEST(SimStep, ReportsBlowUp) {
+    SimParams params;
+    Particles p = orbit(&params);
+    ASSERT_EQ(sim_init(p, params, BACKEND_SERIAL), p.size());
+    params.dt = 1e300; // positions overflow to infinity on the first drift
+    EXPECT_LT(sim_step(p, params, BACKEND_SERIAL), p.size());
+}
+
+TEST(SimStep, SwitchingBackendsMidRunMatches) {
+    // The viewer's 1/2/3 keys (#48): serial, then OpenMP, then serial again must give
+    // the same state as serial throughout, up to rounding. Few steps (gravity is chaotic).
+    // OpenMP sums in serial's order, so this can't tell whether sim_step honours its
+    // backend argument; the GPU version (tests/gpu/) can, since HIP rounds differently.
+    SimParams params;
+    Particles reference, switched;
+    ASSERT_TRUE(build_scenario("cloud", 200, 5, reference, params));
+    ASSERT_TRUE(build_scenario("cloud", 200, 5, switched, params));
+
+    ASSERT_EQ(sim_init(reference, params, BACKEND_SERIAL), reference.size());
+    ASSERT_EQ(sim_init(switched, params, BACKEND_SERIAL), switched.size());
+    const Backend order[] = {BACKEND_SERIAL, BACKEND_OMP, BACKEND_SERIAL};
+    for (Backend b : order) {
+        for (int s = 0; s < 5; ++s) {
+            ASSERT_EQ(sim_step(reference, params, BACKEND_SERIAL), reference.size());
+            ASSERT_EQ(sim_step(switched, params, b), switched.size());
+        }
+    }
+    for (std::size_t i = 0; i < reference.size(); ++i) {
+        double r = std::sqrt(reference.x[i] * reference.x[i] + reference.y[i] * reference.y[i] +
+                             reference.z[i] * reference.z[i]);
+        EXPECT_LE(std::fabs(switched.x[i] - reference.x[i]), 1e-12 * r) << "particle " << i;
+        EXPECT_LE(std::fabs(switched.y[i] - reference.y[i]), 1e-12 * r) << "particle " << i;
+        EXPECT_LE(std::fabs(switched.z[i] - reference.z[i]), 1e-12 * r) << "particle " << i;
+    }
+}
+
 TEST(Sim, EnergyLogHasOneRowPerOutputStep) {
     SimParams params;
     Particles p = orbit(&params);

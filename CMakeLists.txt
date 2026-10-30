@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_HIP "Build the HIP (AMD GPU) gravity backend" OFF)
+option(ENABLE_VIEWER "Build planet_view, the live 3D viewer (downloads raylib; needs X11/OpenGL)" OFF)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 set(SANITIZER "" CACHE STRING "Sanitizer build: address (ASan+UBSan), thread (TSan), or empty")
 
@@ -78,6 +79,23 @@ set_project_warnings(planet_sim)
 add_executable(bench_gravity bench/bench_gravity.cpp)
 target_link_libraries(bench_gravity PRIVATE sim_core)
 set_project_warnings(bench_gravity)
+
+# Live 3D viewer (#45). raylib is pinned to a release tag and built from source, so
+# every machine gets the same version; SYSTEM keeps our warnings off its headers.
+if(ENABLE_VIEWER)
+    include(FetchContent)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        raylib
+        URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(raylib)
+    add_executable(planet_view viewer/planet_view.cpp)
+    target_link_libraries(planet_view PRIVATE sim_core raylib)
+    set_project_warnings(planet_view)
+endif()
 
 enable_testing()
 add_subdirectory(tests)

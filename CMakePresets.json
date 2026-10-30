@@ -57,6 +57,24 @@
         "CMAKE_HIP_FLAGS": "--rocm-path=/opt/rocm",
         "CMAKE_PREFIX_PATH": "/opt/rocm"
       }
+    },
+    {
+      "name": "viewer",
+      "inherits": "dev",
+      "displayName": "Dev + the live viewer (planet_view, raylib)",
+      "cacheVariables": {
+        "ENABLE_VIEWER": "ON"
+      }
+    },
+    {
+      "name": "demo",
+      "inherits": "hip",
+      "displayName": "Presentation build: Release, -march=native, HIP + viewer",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "-march=native",
+        "ENABLE_VIEWER": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -64,7 +82,9 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "tsan", "configurePreset": "tsan" },
-    { "name": "hip", "configurePreset": "hip" }
+    { "name": "hip", "configurePreset": "hip" },
+    { "name": "viewer", "configurePreset": "viewer" },
+    { "name": "demo", "configurePreset": "demo" }
   ],
   "testPresets": [
     {
@@ -98,6 +118,8 @@
       "configurePreset": "hip",
       "output": { "outputOnFailure": true },
       "description": "Everything, including the gpu-labelled tests (needs the GPU)"
-    }
+    },
+    { "name": "viewer", "inherits": "base", "configurePreset": "viewer" },
+    { "name": "demo", "inherits": "hip", "configurePreset": "demo" }
   ]
 }

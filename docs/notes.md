@@ -126,6 +126,25 @@ _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work
 - The first version of the program-level tests passed two error cases *for the wrong reason* (CMake split the argument list, so every run failed with "missing value"). Each error test now matches its specific message, which then caught a real bug: a trailing unknown flag was reported as "missing value".
 - Review deliberately broke 34 copies of this code and **17 still passed the tests**: the gaps were at the program level (overrides, the NaN exit code, a mid-run NaN, `--dt inf`). After adding those tests (including one that blows up during step 1 and a `/dev/full` "disk full" test for the energy log), they're covered. Also caught: CI still ran `planet_sim` with no arguments, which became a usage error and blocked the PR. Branch protection did its job.
 
+### `planet_view`: live viewer with backend switching (Oct 2026, #45, #48)
+**Decisions:**
+- **One step at a time:** `run_simulation` is now built on [`sim_init()` and `sim_step()`](../src/sim.cpp), and the viewer calls the same two functions, so it runs exactly the physics `planet_sim` runs (same setup flags, same config/relaxation path).
+- **Simulation and drawing share one thread.** Each frame runs steps until a time budget (12 ms by default, `[`/`]` to change) is used, always at least one, then draws. No locks or races. A slow backend slows the window too, which is what the demo should show: at 10k particles serial drops to a few fps.
+- **Backend switching needs no data movement (yet).** All state lives in host `Particles`, and the HIP backend copies positions in and accelerations out on every call, so `1`/`2`/`3` just change which backend the next step uses. Once #30 keeps data on the GPU, switching away from HIP must copy it back first.
+- **raylib 5.5**, pinned and built from source behind `ENABLE_VIEWER` (default off), so CI's normal jobs and anyone without X11/OpenGL never touch it. Particles are drawn as small camera-facing squares in one batch; the glow look is #47.
+
+**Evidence:** `SimStep.*` in [tests/test_sim.cpp](../tests/test_sim.cpp): stepping one at a time gives the same bits as `run_simulation`; serial → OpenMP → serial matches serial throughout; a GPU version (serial → HIP → serial) matches within 1e-10 relative. CI's `viewer` job runs `planet_view` for 60 frames on a virtual screen (Xvfb, software OpenGL).
+
+Live numbers on the dev PC (`demo` preset, 10,000-particle `cloud`, 1280×800 window):
+
+| Backend | ms/step | fps |
+|---|---|---|
+| serial | 278 | 4 |
+| OpenMP (12 threads) | 46 | 21 |
+| HIP (naive double) | 26 | 38 |
+
+These match `planet_sim --bench` for the same N, so drawing costs little next to the physics at this size.
+
 ---
 
 ## Time integration

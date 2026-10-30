@@ -18,6 +18,7 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
+| V | Live viewer (`planet_view`) | In progress: 3D window with live serial/OpenMP/GPU switching done; glow look and replay/video export left |
 | 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
 
 Full plan: [PLAN.md](PLAN.md).
@@ -70,6 +71,15 @@ ctest --preset hip                                   # includes the gpu-labelled
 ./build/hip/planet_sim --scenario cloud --n 30000 --steps 10 --backend hip --bench
 ```
 
+Watch it live: `planet_view` opens a 3D window running the same simulation. Press **1 / 2 / 3** to switch serial / OpenMP / GPU mid-run and watch ms/step and fps change (needs X11/OpenGL; raylib downloads automatically):
+
+```bash
+cmake --preset demo && cmake --build --preset demo      # Release + GPU + viewer (no GPU? use the viewer preset)
+./build/demo/planet_view --scenario cloud --n 10000 --backend omp
+```
+
+Keys: `1/2/3` backend, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
+
 ### Build presets
 
 | Preset | Use it for |
@@ -79,6 +89,8 @@ ctest --preset hip                                   # includes the gpu-labelled
 | `asan` | Finding memory bugs and undefined behaviour (AddressSanitizer + UBSan, Linux) |
 | `tsan` | Finding data races in parallel code (ThreadSanitizer, Linux) |
 | `hip` | The GPU backend (`--backend hip`): ROCm, built for the RX 9060 XT (`gfx1200`) and the Ryzen's integrated GPU (`gfx1036`) |
+| `viewer` | `dev` + the live viewer `planet_view` (raylib, X11/OpenGL) |
+| `demo` | The presentation build: Release, `-march=native`, GPU backend + viewer |
 
 Each preset builds into its own `build/<preset>/` folder. Run `cmake --preset <name> && cmake --build --preset <name> && ctest --preset <name>`.
 
@@ -95,6 +107,7 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs .venv/bin/clang-format -i
 
 ```
 src/        simulator source (particles, physics, backends, CLI)
+viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       tooling decisions, design notes (presentation), kickstart guide for new work
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
