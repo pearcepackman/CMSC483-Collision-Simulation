@@ -20,6 +20,16 @@ set_project_warnings(sim_tests)
 # run (e.g. a broken sanitizer runtime) fails the tests instead of the build.
 gtest_discover_tests(sim_tests DISCOVERY_MODE PRE_TEST)
 
+# GPU tests: tests/gpu/*.cpp in their own binary, only with ENABLE_HIP, every test
+# labelled `gpu` so presets without a GPU can skip them (docs/notes.md).
+if(ENABLE_HIP)
+    file(GLOB SIM_GPU_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gpu/*.cpp)
+    add_executable(sim_tests_gpu ${SIM_GPU_TEST_SOURCES})
+    target_link_libraries(sim_tests_gpu PRIVATE sim_core GTest::gtest_main)
+    set_project_warnings(sim_tests_gpu)
+    gtest_discover_tests(sim_tests_gpu DISCOVERY_MODE PRE_TEST PROPERTIES LABELS gpu)
+endif()
+
 # Tests that run the real planet_sim program and check its exit code and output (#14).
 function(add_cli_test name expect_exit)
     cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST" "ARGS" ${ARGN})
@@ -56,9 +66,17 @@ add_cli_test(Cli.UnknownScenarioIsUsageError 1
 add_cli_test(Cli.BlowUpExitsWithCode2 2
     ARGS --scenario orbit --dt 1e300 --steps 5
     OUTPUT "became NaN/Inf after step 1")
-add_cli_test(Cli.HipBackendNotBuiltYet 1
-    ARGS --scenario orbit --backend hip
-    OUTPUT "hip backend isn't built yet")
+if(NOT ENABLE_HIP)
+    add_cli_test(Cli.HipBackendNotInThisBuild 1
+        ARGS --scenario orbit --backend hip
+        OUTPUT "this build has no hip backend; build with: cmake --preset hip")
+else()
+    # The whole program on the GPU: device chosen, bench line, exit 0. Needs a GPU.
+    add_cli_test(Cli.HipBackendRuns 0
+        ARGS --scenario cloud --n 300 --steps 3 --backend hip --bench
+        OUTPUT "bench backend=hip n=300 threads=0 .*hip device: ") # stdout, then stderr
+    set_tests_properties(Cli.HipBackendRuns PROPERTIES LABELS gpu)
+endif()
 add_cli_test(Cli.InfiniteDtIsUsageError 1
     ARGS --scenario orbit --dt inf
     OUTPUT "--dt needs a finite number > 0")

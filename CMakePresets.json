@@ -43,13 +43,28 @@
         "CMAKE_CXX_COMPILER": "clang++",
         "SANITIZER": "thread"
       }
+    },
+    {
+      "name": "hip",
+      "inherits": "base",
+      "displayName": "HIP GPU backend (ROCm: RX 9060 XT = gfx1200, Ryzen 7600X iGPU = gfx1036)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_HIP": "ON",
+        "CMAKE_HIP_ARCHITECTURES": "gfx1200;gfx1036",
+        "CMAKE_HIP_COMPILER": "/opt/rocm/lib/llvm/bin/clang++",
+        "CMAKE_HIP_COMPILER_ROCM_ROOT": "/opt/rocm",
+        "CMAKE_HIP_FLAGS": "--rocm-path=/opt/rocm",
+        "CMAKE_PREFIX_PATH": "/opt/rocm"
+      }
     }
   ],
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
-    { "name": "tsan", "configurePreset": "tsan" }
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "hip", "configurePreset": "hip" }
   ],
   "testPresets": [
     {
@@ -77,6 +92,12 @@
         "TSAN_OPTIONS": "ignore_noninstrumented_modules=1 halt_on_error=1",
         "OMP_NUM_THREADS": "4"
       }
+    },
+    {
+      "name": "hip",
+      "configurePreset": "hip",
+      "output": { "outputOnFailure": true },
+      "description": "Everything, including the gpu-labelled tests (needs the GPU)"
     }
   ]
 }

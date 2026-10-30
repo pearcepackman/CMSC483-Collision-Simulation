@@ -85,7 +85,6 @@ TEST(Cli, RejectsBadInput) {
         {"--scenario", "cloud", "--n", "0"},
         {"--scenario", "cloud", "--n", "20000000"},   // over the 10M cap (~1 GB of particles)
         {"--scenario", "orbit", "--backend", "cuda"}, // unknown backend
-        {"--scenario", "orbit", "--backend", "hip"},  // not built yet (#25)
         {"--scenario", "orbit", "--dt", "inf"},       // must be finite
         {"--scenario", "orbit", "--dt", "1e999"},     // overflows to infinity
         {"--scenario", "orbit", "--dt", "nan"},
@@ -100,6 +99,18 @@ TEST(Cli, RejectsBadInput) {
         EXPECT_FALSE(parse(args, &o, &err)) << "accepted: " << (args.empty() ? "" : args[0]);
         EXPECT_FALSE(err.empty());
     }
+}
+
+TEST(Cli, HipBackendOnlyInHipBuilds) {
+    CliOptions o;
+    std::string err;
+#ifdef SIM_HAVE_HIP
+    ASSERT_TRUE(parse({"--scenario", "orbit", "--backend", "hip"}, &o, &err)) << err;
+    EXPECT_EQ(o.backend, BACKEND_HIP);
+#else
+    EXPECT_FALSE(parse({"--scenario", "orbit", "--backend", "hip"}, &o, &err));
+    EXPECT_NE(err.find("this build has no hip backend"), std::string::npos) << err;
+#endif
 }
 
 TEST(Cli, UnknownFlagIsReportedAsUnknownEvenAtTheEnd) {

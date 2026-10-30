@@ -93,3 +93,28 @@ jobs:
       - run: cmake --build --preset tsan
       - name: Test under TSan (4 threads, preset sets OMP_NUM_THREADS and TSAN_OPTIONS)
         run: ctest --preset tsan
+
+  # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code
+  # for the RX 9060 XT (gfx1200) and runs everything except the gpu-labelled tests.
+  # Same ROCm version as the dev machine (Arch: 7.2.4).
+  hip-compile:
+    runs-on: ubuntu-24.04
+    container: rocm/dev-ubuntu-24.04:7.2.4
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: apt-get update && apt-get install -y cmake ninja-build g++
+      - run: cmake --preset hip
+      - run: cmake --build --preset hip
+      - name: Test (CPU tests in a HIP build; no GPU here)
+        run: ctest --preset hip -LE gpu
+      - name: --backend hip without a GPU must fail cleanly (exit 1 and a message), not crash
+        run: |
+          set +e
+          ./build/hip/planet_sim --scenario orbit --backend hip > out.log 2>&1
+          code=$?
+          cat out.log
+          if [ "$code" -ne 1 ] || ! grep -q "no usable GPU found" out.log; then
+            echo "expected exit 1 with 'no usable GPU found', got exit $code"
+            exit 1
+          fi

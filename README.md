@@ -16,7 +16,7 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 | 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity + leapfrog done; planet generation, frame output, rendering left |
 | 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI done; planets, contact, config, relaxation, video left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
-| 4 | GPU backend (HIP on AMD) | Not started |
+| 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
 | 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
 
@@ -49,7 +49,7 @@ GoogleTest downloads automatically during the first configure.
 ```bash
 planet_sim --scenario orbit|figure8|cloud [--n N] [--seed S]   # built-in setups, no files needed
 planet_sim --config configs/head_on.cfg --out frames/run       # planets from a scenario file
-           [--backend serial|omp] [--steps N] [--dt h] [--output-every k]
+           [--backend serial|omp|hip] [--steps N] [--dt h] [--output-every k]
 planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
 ```
 
@@ -62,6 +62,14 @@ cmake --preset release && cmake --build --preset release
 OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
 ```
 
+Run on the GPU (needs ROCm and a supported AMD GPU; setup in [docs/tooling.md](docs/tooling.md)):
+
+```bash
+cmake --preset hip && cmake --build --preset hip
+ctest --preset hip                                   # includes the gpu-labelled tests
+./build/hip/planet_sim --scenario cloud --n 30000 --steps 10 --backend hip --bench
+```
+
 ### Build presets
 
 | Preset | Use it for |
@@ -70,6 +78,7 @@ OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
 | `release` | Benchmarks: `-O3 -march=native` |
 | `asan` | Finding memory bugs and undefined behaviour (AddressSanitizer + UBSan, Linux) |
 | `tsan` | Finding data races in parallel code (ThreadSanitizer, Linux) |
+| `hip` | The GPU backend (`--backend hip`): ROCm, built for the RX 9060 XT (`gfx1200`) and the Ryzen's integrated GPU (`gfx1036`) |
 
 Each preset builds into its own `build/<preset>/` folder. Run `cmake --preset <name> && cmake --build --preset <name> && ctest --preset <name>`.
 
