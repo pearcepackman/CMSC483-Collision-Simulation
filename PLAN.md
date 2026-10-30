@@ -112,6 +112,8 @@ planet-collision/
 │   ├── test_conservation.cpp
 │   ├── test_backends_match.cpp
 │   └── gpu/                 ← GPU tests: separate binary, label `gpu`, only with ENABLE_HIP
+├── viewer/
+│   └── planet_view.cpp      ← live 3D window (raylib), only built with ENABLE_VIEWER
 ├── configs/                 ← scenario files (head-on, grazing, Theia-like)
 ├── scripts/
 │   ├── render.py            ← frames → images → video
@@ -142,8 +144,8 @@ Dates assume final presentation in early December. Adjust to the real due date.
 
 ### Suggested split
 
-- **Partner A — engine:** integrator, gravity backends (OpenMP, HIP), performance work. Owns the GPU work, since the GPU is in Pearce's PC.
-- **Partner B — world + proof:** planet generation, contact/grid, scenarios, rendering, benchmark scripts.
+- **Partner A, engine:** integrator, gravity backends (OpenMP, HIP), performance work. Owns the GPU work, since the GPU is in Pearce's PC.
+- **Partner B, world and proof:** planet generation, contact/grid, scenarios, rendering, benchmark scripts.
 - **Both:** tests, CI, presentation. Each person should be able to explain every parallel decision; that's what gets asked in Q&A.
 
 ---
@@ -175,13 +177,13 @@ GitHub's free hosted runners have **no GPU**. So CI compiles the HIP code but on
 
 **`.github/workflows/ci.yml` jobs, on every push and pull request:**
 
-1. **format** — `clang-format --dry-run --Werror` on all sources.
-2. **build-and-test (CPU)** — matrix of `gcc` and `clang`:
+1. **format**: `clang-format --dry-run --Werror` on all sources.
+2. **build-and-test (CPU)**: matrix of `gcc` and `clang`:
    - Build with warnings as errors (`-Wall -Wextra -Werror`).
    - `ctest -LE gpu` with `OMP_NUM_THREADS=1` **and** `OMP_NUM_THREADS=4` (catches race conditions that only appear with multiple threads).
-3. **sanitizers** — Debug build with AddressSanitizer + UndefinedBehaviorSanitizer; run the test suite. Catches out-of-bounds writes and memory bugs, the classic C++ "explodes later" bugs.
-4. **hip-compile** — run inside an AMD ROCm devel container with `-DENABLE_HIP=ON` and `CMAKE_HIP_ARCHITECTURES=gfx1200`; build only. Catches HIP syntax and type errors even without a GPU.
-5. **physics smoke test** — run a tiny collision (~500 particles, 200 steps) and fail if energy drift exceeds the threshold or any NaN appears.
+3. **sanitizers**: Debug build with AddressSanitizer + UndefinedBehaviorSanitizer; run the test suite. Catches out-of-bounds writes and memory bugs, the classic C++ "explodes later" bugs.
+4. **hip-compile**: run inside an AMD ROCm devel container with `-DENABLE_HIP=ON` and `CMAKE_HIP_ARCHITECTURES=gfx1200`; build only. Catches HIP syntax and type errors even without a GPU.
+5. **physics smoke test**: run a tiny collision (~500 particles, 200 steps) and fail if energy drift exceeds the threshold or any NaN appears.
 
 **Branch rules:** protect `main`, require CI to pass, use pull requests even as a two-person team. Claude Code works on a branch, CI checks it, a human reviews and merges.
 

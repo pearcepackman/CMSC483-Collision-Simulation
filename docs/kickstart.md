@@ -110,22 +110,22 @@ Relaxation, `#15`: `compute_accelerations()` once, then loop `leapfrog_step()` +
 
 ## 5. Per-issue notes
 
-- **#9 planets:** "same seed gives identical output": `std::mt19937` is identical everywhere, but `std::uniform_real_distribution` can differ between standard libraries (gcc vs clang/macOS). Fine for tests on one machine; if results must match across machines, map the raw `mt19937` output to `[0,1)` yourself. Test "max initial overlap < 10% of particle radius" is cheap: check every pair for small N.
-- **#10 frames:** one CSV per frame, `frame_00042.csv`, columns `id,x,y,z,body`. Round-trip test: write, `read_frame`, compare. With `%.17g` the values come back bit-identical.
-- **#11 render:** matplotlib 3D scatter → PNGs → ffmpeg (both installed on Pearce's machine). Color by `body`. `matplotlib.animation.FFMpegWriter` writes an MP4 directly without temporary PNGs. Pin versions in `scripts/requirements.txt`.
-- **#12 contact:** tests from the issue: separated → zero force; overlapping → repulsive, equal and opposite; head-on bounce loses energy with damping, keeps it without. Check `+=` (contract above). The O(N²) brute force is expected here; the grid comes in #23.
-- **#13 config:** `key = value`, unknown key → `false` + the offending line. Planets need a numbered or sectioned syntax (`planet0.radius = 1.0`?); decide in `/plan-issue 13`.
-- **#15 relax:** see section 4. Test: KE below threshold after relaxing, radius changed < 10%.
-- **#18 video + energy plot:** `planet_sim --config <file> --out frames/<run>` writes `frames/<run>/energy.csv` with columns `step,t,kinetic,potential,total,px,py,pz` (one row per frame). Total energy must never rise, only drop from damping. Rising energy means `dt` is too big or a bug.
-- **#20 benchmark harness:** `planet_sim --scenario cloud --n <N> --backend serial|omp --steps <k> --bench` prints exactly one line, e.g. `bench backend=omp n=5000 threads=6 steps=20 seconds_per_step=0.0121`. Set threads with `OMP_NUM_THREADS`, and pin with `OMP_PROC_BIND=close OMP_PLACES=cores` (see notes.md on why). Works today, no other issues needed.
-- **`Config` relaxation fields (added in #14):** `relax_ke_threshold` and `relax_max_steps` (0 = skip). #13 parses them, #15 tunes them. `build_planets()` in `src/sim.cpp` already calls `make_planet` at rest, then `relax_planet` if `relax_max_steps > 0`, then places the planet.
+- #9 planets: "same seed gives identical output": `std::mt19937` is identical everywhere, but `std::uniform_real_distribution` can differ between standard libraries (gcc vs clang/macOS). Fine for tests on one machine; if results must match across machines, map the raw `mt19937` output to `[0,1)` yourself. Test "max initial overlap < 10% of particle radius" is cheap: check every pair for small N.
+- #10 frames: one CSV per frame, `frame_00042.csv`, columns `id,x,y,z,body`. Round-trip test: write, `read_frame`, compare. With `%.17g` the values come back bit-identical.
+- #11 render: matplotlib 3D scatter → PNGs → ffmpeg (both installed on Pearce's machine). Color by `body`. `matplotlib.animation.FFMpegWriter` writes an MP4 directly without temporary PNGs. Pin versions in `scripts/requirements.txt`.
+- #12 contact: tests from the issue: separated → zero force; overlapping → repulsive, equal and opposite; head-on bounce loses energy with damping, keeps it without. Check `+=` (contract above). The O(N²) brute force is expected here; the grid comes in #23.
+- #13 config: `key = value`, unknown key → `false` + the offending line. Planets need a numbered or sectioned syntax (`planet0.radius = 1.0`?); decide in `/plan-issue 13`.
+- #15 relax: see section 4. Test: KE below threshold after relaxing, radius changed < 10%.
+- #18 video + energy plot: `planet_sim --config <file> --out frames/<run>` writes `frames/<run>/energy.csv` with columns `step,t,kinetic,potential,total,px,py,pz` (one row per frame). Total energy must never rise, only drop from damping. Rising energy means `dt` is too big or a bug.
+- #20 benchmark harness: `planet_sim --scenario cloud --n <N> --backend serial|omp --steps <k> --bench` prints exactly one line, e.g. `bench backend=omp n=5000 threads=6 steps=20 seconds_per_step=0.0121`. Set threads with `OMP_NUM_THREADS`, and pin with `OMP_PROC_BIND=close OMP_PLACES=cores` (see notes.md on why). Works today, no other issues needed.
+- `Config` relaxation fields (added in #14): `relax_ke_threshold` and `relax_max_steps` (0 = skip). #13 parses them, #15 tunes them. `build_planets()` in `src/sim.cpp` already calls `make_planet` at rest, then `relax_planet` if `relax_max_steps > 0`, then places the planet.
 
 ---
 
 ## 6. Lessons already learned (don't repeat them)
 
 - **CI's compilers are older than Arch's** (ubuntu-24.04: gcc 13, clang 18, libomp 18). Something passing locally can fail in CI. That's why CI gates merging.
-- **Benchmarks lie unless careful:** CPU clock speed drifts (boost, power saving, other programs). `bench/bench_gravity.cpp` interleaves configurations and takes medians; copy that approach.
-- **Tests must be able to fail:** reviews deliberately broke the code (swapped axes, dropped pairs, energy leaks) to prove the tests catch it. Pick test values that make bugs visible (e.g. a separation like (2,3,6) whose components all differ).
+- Benchmarks lie unless careful: CPU clock speed drifts (boost, power saving, other programs). `bench/bench_gravity.cpp` interleaves configurations and takes medians; copy that approach.
+- Tests must be able to fail: reviews deliberately broke the code (swapped axes, dropped pairs, energy leaks) to prove the tests catch it. Pick test values that make bugs visible (e.g. a separation like (2,3,6) whose components all differ).
 - **Thread sanitizer needs Archer** for OpenMP: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' | head -n 1) ctest --preset tsan`.
 - **Design decisions go in [docs/notes.md](notes.md)** with numbers: it becomes the presentation.

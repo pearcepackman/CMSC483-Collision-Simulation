@@ -20,7 +20,7 @@ A running log of the parallel-computing decisions in this project: what we chose
 ### Fixed signatures before any physics (Oct 2026, #6)
 **Decision:** every module (gravity, contact, integrator, init, io, config) got its header and stub bodies first, so both of us code against signatures that don't move.
 - **One `SimParams` struct** ([src/params.hpp](../src/params.hpp)) is passed as `const SimParams &` to every physics function. Adding a setting never changes a signature, so one person's change can't break the other's code.
-- **Acceleration contract:** gravity *overwrites* `ax/ay/az`; contact *adds* to them. [`compute_accelerations()`](../src/forces.hpp) is the one place that runs them in that order, and the integrator and planet relaxation both call it.
+- Acceleration contract: gravity *overwrites* `ax/ay/az`; contact *adds* to them. [`compute_accelerations()`](../src/forces.hpp) is the one place that runs them in that order, and the integrator and planet relaxation both call it.
 - **Backends are a plain enum** (`BACKEND_SERIAL / OMP / HIP`) chosen at run time, so every backend shares one interface and can be swapped by a flag.
 - **Stubs abort** with `not implemented: <name>` instead of returning quietly, so an unfinished module can't make a test or run look correct.
 
@@ -77,10 +77,10 @@ OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
 Across four runs, 6 threads gave 5.84–6.03x over 1-thread OpenMP. Serial took 0.28–0.33 s; it's the noisiest number, so the table compares against 1-thread OpenMP (the bench prints both).
 
 **Why it looks like this:**
-- **Near-perfect up to 6 threads:** each particle's work is independent and identical, there's no shared write, and N² math dominates memory traffic. One thread per physical core, no contention.
+- Near-perfect up to 6 threads: each particle's work is independent and identical, there's no shared write, and N² math dominates memory traffic. One thread per physical core, no contention.
 - **8 threads is *slower* than 6:** `schedule(static)` hands every thread an equal block, but with 8 threads on 6 cores, two cores run two threads each at about half speed. The whole loop waits for those slow blocks, so 8 threads finish no sooner than 4. This is the load-imbalance question #22 (static vs dynamic) investigates.
-- **12 threads ≈ 6:** the second hardware thread per core (SMT) shares the same floating-point units, and this loop already keeps them busy, so it adds nothing.
-- **Measurement lesson:** the first runs showed "123% efficiency." That was noise, not magic: with the `powersave` governor, CPU boost and other programs running, the clock speed drifts between measurements. The benchmark now interleaves configurations each round and reports speedup against 1-thread OpenMP as well as serial.
+- 12 threads ≈ 6: the second hardware thread per core (SMT) shares the same floating-point units, and this loop already keeps them busy, so it adds nothing.
+- Measurement lesson: the first runs showed "123% efficiency." That was noise, not magic: with the `powersave` governor, CPU boost and other programs running, the clock speed drifts between measurements. The benchmark now interleaves configurations each round and reports speedup against 1-thread OpenMP as well as serial.
 - **1-thread OpenMP is 3–16% faster than serial** (varies run to run) with identical math and bit-identical results. The compiled code shows why: serial's inner loop re-loads the `y`, `z` and `mass` array addresses from the `Particles` struct on every iteration (the compiler can't prove the writes to `ax/ay/az` don't change them), while the OpenMP version copies them into local pointers that stay in registers. The serial reference is deliberately left unoptimized (CLAUDE.md).
 
 ### HIP gravity: naive double kernel (Oct 2026, #24, #25)
@@ -98,9 +98,9 @@ Across four runs, 6 threads gave 5.84–6.03x over 1-thread OpenMP. Serial took 
 | 30,000 | 0.41 | 0.20 | 2.1x |
 
 **Why it looks like this:**
-- **Double precision is slow on this card.** Consumer RDNA GPUs run `double` at a small fraction of `float` speed. A scratch probe of the kernel alone at N = 10,000 took 25 ms in `double` vs 2.0 ms in `float`, so in `double` the GPU only modestly beats 6 CPU cores. #32 measures the `float` version properly.
-- **Small N loses.** At 2,000 particles the fixed costs (kernel launch, seven host↔device copies per step) outweigh the math; the GPU only pays off as N² grows. #30 removes the per-step copies.
-- **No data reuse yet.** Every thread reads every other particle from global memory; #26 (shared-memory tiles) loads each block of particles once and shares it.
+- Double precision is slow on this card. Consumer RDNA GPUs run `double` at a small fraction of `float` speed. A scratch probe of the kernel alone at N = 10,000 took 25 ms in `double` vs 2.0 ms in `float`, so in `double` the GPU only modestly beats 6 CPU cores. #32 measures the `float` version properly.
+- Small N loses. At 2,000 particles the fixed costs (kernel launch, seven host↔device copies per step) outweigh the math; the GPU only pays off as N² grows. #30 removes the per-step copies.
+- No data reuse yet. Every thread reads every other particle from global memory; #26 (shared-memory tiles) loads each block of particles once and shares it.
 
 **Build gotcha (Arch ROCm 7.2):** the ROCm clang guesses its install root as `/opt/rocm/lib` and can't find `hip/hip_runtime.h`; the `hip` preset passes `--rocm-path=/opt/rocm` and pins the compiler and ROCm root so it works from any shell.
 
@@ -118,13 +118,32 @@ _Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work
 - **Built-in scenarios** (`--scenario orbit|figure8|cloud`) so the program runs before the config loader (#13) and planet generator (#9) exist: benchmarks (#20) and tests (#16) can start now. Collisions come from config files.
 - **Planets are built at rest at the origin**, relaxed, then placed with `place_planet()` (the #15 contract), and forces are recomputed for the combined system before stepping.
 - **`--bench`** writes nothing and prints one line for scripts: `bench backend=omp n=5000 threads=6 steps=20 seconds_per_step=0.0121`.
-- **Exit codes:** 0 ok, 1 usage/setup error, 2 NaN/Inf.
+- Exit codes: 0 ok, 1 usage/setup error, 2 NaN/Inf.
 
 **Evidence:** [tests/test_sim.cpp](../tests/test_sim.cpp) checks the loop gives the same bits as hand-written leapfrog steps, the energy log's rows and conservation, NaN detection, CLI parsing; CTest also runs the real `planet_sim` binary and checks exit codes and output ([tests/CMakeLists.txt](../tests/CMakeLists.txt)). First end-to-end OpenMP number through the real program: a 5,000-particle cloud, 0.077 s/step serial vs 0.012 s/step with 6 threads (6.4x), Ryzen 5 7600X, `release`.
 
 **Lessons:**
 - The first version of the program-level tests passed two error cases *for the wrong reason* (CMake split the argument list, so every run failed with "missing value"). Each error test now matches its specific message, which then caught a real bug: a trailing unknown flag was reported as "missing value".
 - Review deliberately broke 34 copies of this code and **17 still passed the tests**: the gaps were at the program level (overrides, the NaN exit code, a mid-run NaN, `--dt inf`). After adding those tests (including one that blows up during step 1 and a `/dev/full` "disk full" test for the energy log), they're covered. Also caught: CI still ran `planet_sim` with no arguments, which became a usage error and blocked the PR. Branch protection did its job.
+
+### `planet_view`: live viewer with backend switching (Oct 2026, #45, #48)
+**Decisions:**
+- One step at a time: `run_simulation` is now built on [`sim_init()` and `sim_step()`](../src/sim.cpp), and the viewer calls the same two functions, so it runs exactly the physics `planet_sim` runs (same setup flags, same config/relaxation path).
+- Simulation and drawing share one thread. Each frame runs steps until a time budget (12 ms by default, `[`/`]` to change) is used, always at least one, then draws. No locks or races. A slow backend slows the window too, which is what the demo should show: at 10k particles serial drops to a few fps.
+- Backend switching needs no data movement (yet). All state lives in host `Particles`, and the HIP backend copies positions in and accelerations out on every call, so `1`/`2`/`3` just change which backend the next step uses. Once #30 keeps data on the GPU, switching away from HIP must copy it back first.
+- **raylib 5.5**, pinned and built from source behind `ENABLE_VIEWER` (default off), so CI's normal jobs and anyone without X11/OpenGL never touch it. Particles are drawn as small camera-facing squares in one batch; the glow look is #47.
+
+**Evidence:** `SimStep.*` in [tests/test_sim.cpp](../tests/test_sim.cpp): stepping one at a time gives the same bits as `run_simulation`; serial → OpenMP → serial matches serial throughout; a GPU version (serial → HIP → serial) matches within 1e-10 relative. CI's `viewer` job runs `planet_view` for 60 frames on a virtual screen (Xvfb, software OpenGL).
+
+Live numbers on the dev PC (`demo` preset, 10,000-particle `cloud`, 1280×800 window):
+
+| Backend | ms/step | fps |
+|---|---|---|
+| serial | 278 | 4 |
+| OpenMP (12 threads) | 46 | 21 |
+| HIP (naive double) | 26 | 38 |
+
+These match `planet_sim --bench` for the same N, so drawing costs little next to the physics at this size.
 
 ---
 

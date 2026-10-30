@@ -94,6 +94,44 @@ jobs:
       - name: Test under TSan (4 threads, preset sets OMP_NUM_THREADS and TSAN_OPTIONS)
         run: ctest --preset tsan
 
+  # Live viewer (#45). Builds planet_view (raylib, X11) and actually runs it for 60
+  # frames on a virtual screen (Xvfb, software OpenGL), so a viewer that crashes on
+  # start, or a refactor that breaks it, fails here. The last frame is uploaded.
+  viewer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libomp-dev xvfb \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+      - run: cmake --preset viewer
+      - run: cmake --build --preset viewer
+      - name: Test planet_view's argument checks (build-test runs the rest)
+        run: ctest --preset viewer -R '^Viewer\.'
+      - name: Run planet_view for 60 frames on a virtual screen
+        run: |
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./build/viewer/planet_view --scenario cloud --n 300 --backend omp --frames 60 \
+            --screenshot viewer.png
+          # --screenshot must really write a PNG (the upload below ignores a missing file).
+          test -s viewer.png && head -c 8 viewer.png | od -An -c | grep -q 'P   N   G' \
+            || { echo "viewer.png missing or not a PNG"; exit 1; }
+      - name: A simulation that blows up must exit 2, as planet_sim does
+        run: |
+          set +e
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./build/viewer/planet_view --scenario orbit --dt 1e300 --frames 5
+          code=$?
+          if [ "$code" -ne 2 ]; then echo "expected exit 2, got $code"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewer-screenshot
+          path: viewer.png
+          if-no-files-found: ignore
+
   # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code
   # for the RX 9060 XT (gfx1200) and runs everything except the gpu-labelled tests.
   # Same ROCm version as the dev machine (Arch: 7.2.4).

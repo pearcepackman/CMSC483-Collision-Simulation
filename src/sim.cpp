@@ -42,6 +42,19 @@ bool finish_log(FILE *f) {
     return ok;
 }
 
+std::size_t sim_init(Particles &p, const SimParams &params, Backend backend) {
+    std::size_t bad = first_non_finite(p);
+    if (bad == p.size()) {
+        compute_accelerations(p, params, backend);
+    }
+    return bad;
+}
+
+std::size_t sim_step(Particles &p, const SimParams &params, Backend backend) {
+    leapfrog_step(p, params, backend);
+    return first_non_finite(p);
+}
+
 RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions &opts,
                          FILE *energy_log) {
     RunResult result;
@@ -57,19 +70,17 @@ RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions
         }
     };
 
-    result.bad_particle = first_non_finite(p);
+    result.bad_particle = sim_init(p, params, opts.backend);
     if (result.bad_particle != p.size()) { // bad input: don't even start
         result.finite = false;
         return result;
     }
-    compute_accelerations(p, params, opts.backend); // leapfrog needs a(t = 0)
     output(0);
 
     double t0 = omp_get_wtime();
     for (int step = 1; step <= opts.steps && result.io_ok; ++step) {
-        leapfrog_step(p, params, opts.backend);
+        result.bad_particle = sim_step(p, params, opts.backend);
         result.steps_done = step;
-        result.bad_particle = first_non_finite(p);
         if (result.bad_particle != p.size()) {
             result.finite = false;
             break;

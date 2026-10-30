@@ -6,7 +6,23 @@ Smash two particle-based planets together and use parallel computing to make an 
 
 Each planet is a ball of thousands of particles. Every timestep, every particle pulls on every other one (gravity), overlapping particles push apart and lose energy (soft-sphere contact), and a leapfrog integrator advances positions and velocities. The same simulation runs on three swappable backends, **serial**, **OpenMP** (CPU threads) and **HIP** (AMD GPU), so we can measure exactly how much each one speeds things up.
 
-> Demo video coming with milestone 2.
+![Live viewer: 10,000 particles on the GPU](docs/media/viewer_10k_hip.png)
+
+## Results so far
+
+Gravity for 10,000 particles, one step, measured in the live viewer (Ryzen 5 7600X, Radeon RX 9060 XT):
+
+| Backend | ms per step | Speedup over serial |
+|---|---|---|
+| Serial | 277 | 1x |
+| OpenMP, 12 threads | 47 | 5.9x |
+| GPU, first kernel (double precision) | 28 | 9.9x |
+
+OpenMP scales almost perfectly up to the 6 physical cores:
+
+![OpenMP speedup](docs/figures/fig_openmp_speedup.png)
+
+The GPU kernel is still the simple version. This card runs double precision about 13 times slower than single, and timing the kernel alone in single precision gave 2 ms per step at this size, so the float and tiled kernels (#32, #26) should widen the gap a lot. The full history, with screenshots, is in [docs/progress.md](docs/progress.md).
 
 ## Status
 
@@ -18,6 +34,7 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
+| V | Live viewer (`planet_view`) | In progress: 3D window with live serial/OpenMP/GPU switching done; glow look and replay/video export left |
 | 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
 
 Full plan: [PLAN.md](PLAN.md).
@@ -70,6 +87,15 @@ ctest --preset hip                                   # includes the gpu-labelled
 ./build/hip/planet_sim --scenario cloud --n 30000 --steps 10 --backend hip --bench
 ```
 
+Watch it live: `planet_view` opens a 3D window running the same simulation. Press **1 / 2 / 3** to switch serial / OpenMP / GPU mid-run and watch ms/step and fps change (needs X11/OpenGL; raylib downloads automatically):
+
+```bash
+cmake --preset demo && cmake --build --preset demo      # Release + GPU + viewer (no GPU? use the viewer preset)
+./build/demo/planet_view --scenario cloud --n 10000 --backend omp
+```
+
+Keys: `1/2/3` backend, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
+
 ### Build presets
 
 | Preset | Use it for |
@@ -79,6 +105,8 @@ ctest --preset hip                                   # includes the gpu-labelled
 | `asan` | Finding memory bugs and undefined behaviour (AddressSanitizer + UBSan, Linux) |
 | `tsan` | Finding data races in parallel code (ThreadSanitizer, Linux) |
 | `hip` | The GPU backend (`--backend hip`): ROCm, built for the RX 9060 XT (`gfx1200`) and the Ryzen's integrated GPU (`gfx1036`) |
+| `viewer` | `dev` + the live viewer `planet_view` (raylib, X11/OpenGL) |
+| `demo` | The presentation build: Release, `-march=native`, GPU backend + viewer |
 
 Each preset builds into its own `build/<preset>/` folder. Run `cmake --preset <name> && cmake --build --preset <name> && ctest --preset <name>`.
 
@@ -95,8 +123,9 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs .venv/bin/clang-format -i
 
 ```
 src/        simulator source (particles, physics, backends, CLI)
+viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
-docs/       tooling decisions, design notes (presentation), kickstart guide for new work
+docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
@@ -104,13 +133,14 @@ bench/      micro-benchmarks (bench_gravity) and committed results
 
 ## How we know it's correct
 
-Parallel physics code can look fine while being wrong, so CI checks it on every pull request:
+Parallel physics code can look fine while being wrong, so every pull request has to pass CI before it can merge:
 
-- **Physics tests:** orbits stay closed, momentum and energy are conserved, no NaNs.
-- **Backend agreement:** OpenMP and GPU forces match the serial reference within a floating-point tolerance.
-- **Run at 1 and 4 threads:** catches races that only appear with multiple threads.
-- **Sanitizers:** AddressSanitizer + UBSan for memory bugs; ThreadSanitizer for data races.
-- **gcc and clang**, warnings treated as errors, and a GPU (HIP) compile check.
+- Physics tests: orbits stay closed, energy and momentum are conserved, nothing becomes NaN.
+- OpenMP forces match the serial reference within a floating-point tolerance, tested at 1 and 4 threads.
+- AddressSanitizer and UBSan for memory bugs, ThreadSanitizer for data races.
+- Builds with gcc and clang with warnings as errors, plus a HIP compile check and a run of the live viewer on a virtual screen.
+
+CI machines have no GPU, so the GPU tests (which compare HIP against serial the same way) run on our own machine with `ctest --preset hip`.
 
 Details: [docs/tooling.md](docs/tooling.md). Design decisions and benchmark findings: [docs/notes.md](docs/notes.md).
 

@@ -9,6 +9,7 @@
 #include "integrator.hpp"
 #include "params.hpp"
 #include "particles.hpp"
+#include "sim.hpp"
 
 // HIP backend vs the serial reference (#25). Built only with ENABLE_HIP and labelled
 // `gpu`; each test skips if no GPU is visible. Compare with relative tolerances, never
@@ -189,5 +190,31 @@ TEST(GravityHip, FewLeapfrogStepsTrackSerial) {
         EXPECT_LE(std::fabs(gpu.x[i] - serial.x[i]), 1e-10 * r) << "particle " << i;
         EXPECT_LE(std::fabs(gpu.y[i] - serial.y[i]), 1e-10 * r) << "particle " << i;
         EXPECT_LE(std::fabs(gpu.z[i] - serial.z[i]), 1e-10 * r) << "particle " << i;
+    }
+}
+
+TEST(GravityHip, SwitchingToHipAndBackMidRunMatches) {
+    // The viewer's backend keys (#48): serial -> HIP -> serial must track serial
+    // throughout, up to rounding. Few steps (gravity is chaotic).
+    REQUIRE_GPU();
+    SimParams params;
+    Particles reference, switched;
+    ASSERT_TRUE(build_scenario("cloud", 500, 8, reference, params));
+    ASSERT_TRUE(build_scenario("cloud", 500, 8, switched, params));
+    ASSERT_EQ(sim_init(reference, params, BACKEND_SERIAL), reference.size());
+    ASSERT_EQ(sim_init(switched, params, BACKEND_SERIAL), switched.size());
+    const Backend order[] = {BACKEND_SERIAL, BACKEND_HIP, BACKEND_SERIAL};
+    for (Backend b : order) {
+        for (int s = 0; s < 5; ++s) {
+            ASSERT_EQ(sim_step(reference, params, BACKEND_SERIAL), reference.size());
+            ASSERT_EQ(sim_step(switched, params, b), switched.size());
+        }
+    }
+    for (std::size_t i = 0; i < reference.size(); ++i) {
+        double r = std::sqrt(reference.x[i] * reference.x[i] + reference.y[i] * reference.y[i] +
+                             reference.z[i] * reference.z[i]);
+        EXPECT_LE(std::fabs(switched.x[i] - reference.x[i]), 1e-10 * r) << "particle " << i;
+        EXPECT_LE(std::fabs(switched.y[i] - reference.y[i]), 1e-10 * r) << "particle " << i;
+        EXPECT_LE(std::fabs(switched.z[i] - reference.z[i]), 1e-10 * r) << "particle " << i;
     }
 }

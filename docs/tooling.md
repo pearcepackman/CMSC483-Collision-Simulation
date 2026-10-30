@@ -42,6 +42,8 @@ For a web developer, the closest mapping is:
   | `asan` | clang | Debug + AddressSanitizer + UBSan (memory bugs, UB) |
   | `tsan` | clang + libomp | ThreadSanitizer (data races in OpenMP code) |
   | `hip` | ROCm clang (HIP) + system C++ compiler | `-DENABLE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1200;gfx1036` (the RX 9060 XT and the Ryzen's integrated GPU: ROCm aborts a launch if any visible GPU lacks code, see docs/notes.md), compiler and ROCm root pinned to `/opt/rocm`. `ctest --preset hip` also runs the `gpu`-labelled tests (they skip if no GPU is visible) |
+  | `viewer` | system compiler | `dev` + `-DENABLE_VIEWER=ON`: builds `planet_view` with raylib 5.5 (pinned, built from source; needs X11 and OpenGL dev headers) |
+  | `demo` | ROCm clang + system compiler | `hip` + Release + `-march=native` + viewer: the presentation build |
 
 - **GoogleTest** via `FetchContent`, pinned to **v1.17.0** (latest confirmed release; needs C++17). Pin a tag, never `main`.
 - Export `compile_commands.json` (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`) so editors (clangd / VS Code) understand the code.
@@ -95,6 +97,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is co
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
 | `tsan` | clang + libomp + Archer (found with `find /usr/lib -name 'libarcher.so*'`, loaded via `OMP_TOOL_LIBRARIES`), `tsan` preset at 4 threads | Data races in OpenMP loops. **Blocking** (#21). It first runs a **canary**, [.github/ci/tsan_canary.cpp](../.github/ci/tsan_canary.cpp), a deliberately racy loop; if TSan doesn't report it, the job fails, so a broken race checker can't pass silently. Locally: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' \| head -n 1) ctest --preset tsan`. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
+| `viewer` | Builds the `viewer` preset (X11/GL dev packages), runs its tests, then runs `planet_view` for 60 frames under Xvfb (a virtual screen with software OpenGL) and uploads the last frame as an artifact | A viewer that no longer compiles, crashes on start, or breaks when the simulation code changes |
 | `hip-compile` | In the `rocm/dev-ubuntu-24.04:7.2.4` container (same ROCm as the dev PC): `hip` preset (explicit architectures, since CMake can't detect a GPU that isn't there), CPU tests with `-LE gpu`, and `planet_sim --backend hip` must exit 1 with "no usable GPU found" | HIP syntax/type errors and warnings (`-Werror` applies to HIP too), a HIP build breaking CPU code, a crash instead of a clean error without a GPU |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |
 
@@ -115,7 +118,7 @@ There's little to leak in this project (no API keys). The real risks are an **SS
 
 ### Branch protection
 
-**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan` and `hip-compile` (added Oct 30, PR #51). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. When `smoke` (#17) lands, add it to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
+**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan`, `hip-compile` (added Oct 30, PR #51) and `viewer` (added Oct 30, PR #52). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. When `smoke` (#17) lands, add it to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
 
 ---
 

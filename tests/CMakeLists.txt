@@ -30,11 +30,15 @@ if(ENABLE_HIP)
     gtest_discover_tests(sim_tests_gpu DISCOVERY_MODE PRE_TEST PROPERTIES LABELS gpu)
 endif()
 
-# Tests that run the real planet_sim program and check its exit code and output (#14).
+# Tests that run the real planet_sim program (or PROGRAM, e.g. planet_view) and check
+# its exit code and output (#14).
 function(add_cli_test name expect_exit)
-    cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST" "ARGS" ${ARGN})
+    cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST;PROGRAM" "ARGS" ${ARGN})
+    if(NOT T_PROGRAM)
+        set(T_PROGRAM planet_sim)
+    endif()
     list(JOIN T_ARGS "|" joined_args) # see check_run.cmake
-    set(cmd -DCMD=$<TARGET_FILE:planet_sim> "-DARGS=${joined_args}" -DEXPECT_EXIT=${expect_exit})
+    set(cmd -DCMD=$<TARGET_FILE:${T_PROGRAM}> "-DARGS=${joined_args}" -DEXPECT_EXIT=${expect_exit})
     if(T_OUTPUT)
         list(APPEND cmd "-DEXPECT_OUTPUT=${T_OUTPUT}")
     endif()
@@ -80,3 +84,43 @@ endif()
 add_cli_test(Cli.InfiniteDtIsUsageError 1
     ARGS --scenario orbit --dt inf
     OUTPUT "--dt needs a finite number > 0")
+
+# planet_view's argument handling. Parsing happens before any window opens, so these
+# run without a display.
+if(ENABLE_VIEWER)
+    add_cli_test(Viewer.RejectsPlanetSimOnlyFlags 1 PROGRAM planet_view
+        ARGS --scenario cloud --out somewhere
+        OUTPUT "are planet_sim flags; the viewer runs until you close it")
+    add_cli_test(Viewer.RejectsBadFrames 1 PROGRAM planet_view
+        ARGS --scenario cloud --frames abc
+        OUTPUT "--frames needs a whole number >= 1, got 'abc'")
+    add_cli_test(Viewer.RejectsMissingFramesValue 1 PROGRAM planet_view
+        ARGS --scenario cloud --frames
+        OUTPUT "--frames needs a whole number >= 1, got ''")
+    add_cli_test(Viewer.RejectsZeroFrames 1 PROGRAM planet_view
+        ARGS --scenario cloud --frames 0
+        OUTPUT "--frames needs a whole number >= 1, got '0'")
+    add_cli_test(Viewer.RejectsNegativeFrames 1 PROGRAM planet_view
+        ARGS --scenario cloud --frames -3
+        OUTPUT "--frames needs a whole number >= 1, got '-3'")
+    add_cli_test(Viewer.RejectsOverflowingFrames 1 PROGRAM planet_view
+        ARGS --scenario cloud --frames 99999999999999999999999
+        OUTPUT "--frames needs a whole number >= 1")
+    add_cli_test(Viewer.RejectsNonPngScreenshot 1 PROGRAM planet_view
+        ARGS --scenario cloud --screenshot shot.jpg
+        OUTPUT "--screenshot needs a .png file name, got 'shot.jpg'")
+    add_cli_test(Viewer.RejectsEmptyScreenshotName 1 PROGRAM planet_view
+        ARGS --scenario cloud --screenshot ""
+        OUTPUT "--screenshot needs a .png file name, got ''")
+    add_cli_test(Viewer.UnknownScenarioIsSetupError 1 PROGRAM planet_view
+        ARGS --scenario nope
+        OUTPUT "unknown scenario 'nope'")
+    if(NOT ENABLE_HIP)
+        add_cli_test(Viewer.HipNotInThisBuild 1 PROGRAM planet_view
+            ARGS --scenario cloud --backend hip
+            OUTPUT "this build has no hip backend")
+    endif()
+    add_cli_test(Viewer.Help 0 PROGRAM planet_view
+        ARGS --help
+        OUTPUT "keys: 1/2/3 serial/OpenMP/HIP")
+endif()
