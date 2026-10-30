@@ -8,7 +8,21 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 
 ![Live viewer: 10,000 particles on the GPU](docs/media/viewer_10k_hip.png)
 
-> How the project got here, with screenshots and numbers: [docs/journey.md](docs/journey.md). Demo video coming with milestone 2.
+## Results so far
+
+Gravity for 10,000 particles, one step, measured in the live viewer (Ryzen 5 7600X, Radeon RX 9060 XT):
+
+| Backend | ms per step | Speedup over serial |
+|---|---|---|
+| Serial | 277 | 1x |
+| OpenMP, 12 threads | 47 | 5.9x |
+| GPU, first kernel (double precision) | 28 | 9.9x |
+
+OpenMP scales almost perfectly up to the 6 physical cores:
+
+![OpenMP speedup](docs/figures/fig_openmp_speedup.png)
+
+The GPU kernel is still the simple version. This card runs double precision about 13 times slower than single, and timing the kernel alone in single precision gave 2 ms per step at this size, so the float and tiled kernels (#32, #26) should widen the gap a lot. The full history, with screenshots, is in [docs/progress.md](docs/progress.md).
 
 ## Status
 
@@ -111,7 +125,7 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs .venv/bin/clang-format -i
 src/        simulator source (particles, physics, backends, CLI)
 viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
-docs/       journey (the story + screenshots), design notes, tooling decisions, kickstart guide
+docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
@@ -119,13 +133,14 @@ bench/      micro-benchmarks (bench_gravity) and committed results
 
 ## How we know it's correct
 
-Parallel physics code can look fine while being wrong, so CI checks it on every pull request:
+Parallel physics code can look fine while being wrong, so every pull request has to pass CI before it can merge:
 
-- **Physics tests:** orbits stay closed, momentum and energy are conserved, no NaNs.
-- **Backend agreement:** OpenMP and GPU forces match the serial reference within a floating-point tolerance.
-- **Run at 1 and 4 threads:** catches races that only appear with multiple threads.
-- **Sanitizers:** AddressSanitizer + UBSan for memory bugs; ThreadSanitizer for data races.
-- **gcc and clang**, warnings treated as errors, and a GPU (HIP) compile check.
+- Physics tests: orbits stay closed, energy and momentum are conserved, nothing becomes NaN.
+- OpenMP forces match the serial reference within a floating-point tolerance, tested at 1 and 4 threads.
+- AddressSanitizer and UBSan for memory bugs, ThreadSanitizer for data races.
+- Builds with gcc and clang with warnings as errors, plus a HIP compile check and a run of the live viewer on a virtual screen.
+
+CI machines have no GPU, so the GPU tests (which compare HIP against serial the same way) run on our own machine with `ctest --preset hip`.
 
 Details: [docs/tooling.md](docs/tooling.md). Design decisions and benchmark findings: [docs/notes.md](docs/notes.md).
 
