@@ -6,7 +6,9 @@ Smash two particle-based planets together and use parallel computing to make an 
 
 Each planet is a ball of thousands of particles. Every timestep, every particle pulls on every other one (gravity), overlapping particles push apart and lose energy (soft-sphere contact), and a leapfrog integrator advances positions and velocities. The same simulation runs on three swappable backends, **serial**, **OpenMP** (CPU threads) and **HIP** (AMD GPU), so we can measure exactly how much each one speeds things up.
 
-> Demo video coming with milestone 2.
+![Live viewer: 10,000 particles on the GPU](docs/media/viewer_10k_hip.png)
+
+> How the project got here, with screenshots and numbers: [docs/journey.md](docs/journey.md). Demo video coming with milestone 2.
 
 ## Status
 
@@ -109,7 +111,7 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs .venv/bin/clang-format -i
 src/        simulator source (particles, physics, backends, CLI)
 viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
-docs/       tooling decisions, design notes (presentation), kickstart guide for new work
+docs/       journey (the story + screenshots), design notes, tooling decisions, kickstart guide
 scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
