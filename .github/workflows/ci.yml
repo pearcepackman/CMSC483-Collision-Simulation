@@ -115,6 +115,9 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x800x24" \
             ./build/viewer/planet_view --scenario cloud --n 300 --backend omp --frames 60 \
             --screenshot viewer.png
+          # --screenshot must really write a PNG (the upload below ignores a missing file).
+          test -s viewer.png && head -c 8 viewer.png | od -An -c | grep -q 'P   N   G' \
+            || { echo "viewer.png missing or not a PNG"; exit 1; }
       - name: A simulation that blows up must exit 2, as planet_sim does
         run: |
           set +e

@@ -51,6 +51,7 @@ When both run, launch them **in parallel, in a single message** (Agent tool, `ge
 - **Project rules:** `gravity_serial.cpp` is not deleted or "optimized"; particle data stays Struct-of-Arrays; test tolerances and physics constants are not loosened; backends share one interface.
 - **C++ hygiene:** no raw `new`/`malloc` without a reason; no out-of-bounds indexing; integer overflow on `N*N` (use `size_t`/`int64_t`).
 - **CMake/CI:** no hardcoded paths; HIP stays optional; warnings aren't silenced to make the build pass.
+- **Test and CI gaps (always report these as findings):** for every new or changed behaviour (function, flag, exit code, error message, backend, build option, executable), name the test that would fail if it broke. If none would, that's a finding. Also check that **CI runs** that test: a test in a preset or label CI never builds/runs protects nothing. Flag tests that pass for the wrong reason (e.g. two backends that give identical bits, so a comparison can't detect a mix-up) and new artifacts CI never exercises (a new executable, preset, script or runtime mode).
 - Simplicity: C-style and readable beats clever.
 
 **Agent B: Adversarial reviewer.** Assume the change is broken and try to prove it. For each suspicion, build a **concrete** input or thread interleaving that breaks it: N=0, N=1, two particles at the same position, huge velocities, `OMP_NUM_THREADS` > N, a non-multiple-of-block-size N for the GPU kernel. Where cheap, confirm by writing a throwaway test or program in the scratchpad (not the repo) and running it. Report only what you could demonstrate or argue concretely, and mark each `CONFIRMED` (reproduced) or `PLAUSIBLE` (argued, not run). Also attack the tests themselves: would they still pass if the code were wrong?
@@ -65,6 +66,8 @@ Show a numbered table:
 |---|---|---|---|---|
 
 Under it, one line per item explaining the failure scenario in plain language. The user is new to C++/HPC, so briefly explain jargon (e.g. "false sharing: two threads writing neighbouring memory slow each other down").
+
+Always add a **Test & CI coverage** table, even when the review found nothing else: one row per new or changed behaviour → the test that catches it breaking (or **none**) → the CI job that runs that test (or **not in CI**). Every **none** / **not in CI** row is also a `should-fix` in the findings table, with the test or CI step to add (or the open issue that will add it, e.g. #17 for the smoke test). The goal: CI keeps up with the code, so `main` stays protected as features land.
 
 If an issue was found in Phase 1, add an **Issue coverage** table: each "Done when" box → done / missing / not checkable here (e.g. "reviewed by Kyle"), plus any changes outside the issue's scope or posted plan. Missing boxes and scope creep also go in the findings table as `should-fix`.
 
@@ -95,6 +98,8 @@ If `gitleaks` isn't installed, grep the diff for: `-----BEGIN .*PRIVATE KEY`, `s
 Report findings. Ask before deleting or untracking anything.
 
 ## Phase 6: Tests for what changed
+
+Write the tests and CI steps for every gap the user approved in Phase 3 (the Test & CI coverage table), then re-check the table: each row should now name a test and a CI job. Where cheap, prove a new test bites by breaking the code on purpose (a quick mutant in the scratchpad or a temporary edit you revert) and watching the test fail.
 
 Per `CLAUDE.md`: every new backend or physics change needs a test. For each behaviour change in `src/`, check a test covers it. Typical needs:
 - New/changed backend → add a case to `test_backends_match` (single force evaluation, relative tolerance, not `==`).
