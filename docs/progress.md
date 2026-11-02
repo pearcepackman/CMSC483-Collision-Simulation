@@ -8,7 +8,7 @@ Hardware for every number below: AMD Ryzen 5 7600X (6 cores, 12 threads), AMD Ra
 
 Two planets made of particles collide. The same O(N²) gravity runs on three backends (serial, OpenMP, HIP on the GPU), and the live viewer lets you switch between them mid-collision. Before building the viewer we picked its look with a quick browser prototype running a JavaScript port of the same physics.
 
-Still to do: planets, contact forces and relaxation (#9, #12, #15), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), recorded runs to video (#49) and the full scaling plots (#34).
+Still to do: contact forces and relaxation (#12, #15), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), recorded runs to video (#49) and the full scaling plots (#34).
 
 ## Oct 22: Build, CI and test setup (#1, #39, #40)
 
@@ -67,3 +67,11 @@ Same 10,000-particle cloud, same moment, three backends:
 ![collapse](media/viewer_5k_hip_collapse.png)
 
 The GPU numbers here come from the first, simple kernel. The float and tiled kernels are next.
+
+## Nov 2: Planet generation (#9)
+
+`make_planet()` builds a planet as a ball of particles on a face-centered cubic lattice (the densest regular packing, like stacked oranges), centered on its center of mass, with a small random nudge per particle from a fixed seed. Generation runs once per planet before the simulation starts, so it stays serial.
+
+Review caught a reproducibility bug that matters for comparing backends: the release build (`-march=native`) rounds floating-point math slightly differently, which made the same seed give a different planet in 1,003 of 2,000 particles. Picking lattice points by exact integer distance fixed it; the two builds now agree to 1e-16.
+
+For 2,000 particles in a unit ball, particles can be up to about 0.0688 in radius before neighbors overlap by more than 10% of a particle radius; past that, `make_planet` stops with an error instead of building a planet that would blow apart on the first step. Nothing renders planets yet; the first pictures come with frame output (#10) and the render script (#11).

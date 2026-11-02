@@ -163,6 +163,17 @@ Relative energy error |E − E₀|/|E₀|, worst value seen up to that point (ch
 
 ---
 
+## Planets
+
+### FCC lattice with a small seeded jitter (Nov 2026, #9)
+**Decision:** [`make_planet()`](../src/init.cpp) takes the `n` points of a face-centered cubic (FCC) lattice closest to the origin, shifts them so their mean is at the planet's center, scales the lattice to the largest spacing that keeps every center within `radius - particle_radius - jitter`, and moves each particle by a random offset of at most 2% of `particle_radius`. The seed only controls that offset. If that spacing would let neighbors overlap by 10% of `particle_radius` or more, `make_planet` aborts with the spec in the message instead of building a planet that explodes on its first contact step.
+**Why:** a purely random fill can't meet the "overlap under 10%" rule at any useful density, and random filling with a minimum distance stops at about 38% packing and is O(N²) without a grid. FCC is the densest regular packing (74%), so the planet starts close to its settled size and relaxation (#15) has less to fix. A simple cubic grid packs only 52% and has flat planes that shear easily.
+**Same seed, same planet, on every build:** measured in half cube sides, FCC points are the integer triples with an even sum, so the code picks and orders the `n` closest points by exact integer distance. A first version sorted on floating-point distances, and the release preset's `-march=native` turns `x*x + y*y + z*z` into fused multiply-adds (FMA, one rounding instead of two). That reordered points that tie within a shell, and 1,003 of 2,000 particles landed somewhere else than in the dev build. With integer keys the two builds now differ by at most 1.1e-16. The jitter comes from the raw 64-bit output of `std::mt19937_64`, which the standard fixes exactly, not from `std::uniform_real_distribution`, which libstdc++ (Linux) and libc++ (macOS) implement differently. `Init.MatchesStoredPlanet` checks a stored 13-particle planet, so CI's gcc and clang builds must agree.
+**Centering:** the last lattice shell is usually only partly filled, and the first version left the planet's center of mass up to 2% of the radius off center at a few hundred particles (47% for n = 2). Subtracting the mean brings that down to the jitter: 8.5e-6 of the radius at n = 2,000 and 3.6e-4 at n = 2.
+**Evidence:** for 2,000 particles in a unit ball, the largest `particle_radius` that passes is about 0.0688 (worst overlap 9.7% of `particle_radius`); 0.069 aborts. At 0.068 the worst overlap is 7.2%, and at 0.065 neighbors just touch (-2.6%, a small gap). The tests pin the limit from both sides (0.068 must work, 0.07 must abort). We also ran 21 deliberately broken copies of `make_planet` (overlap limit raised to 20%, jitter in a cube instead of a ball, farthest points kept, no centering, wrong seed, and so on) against the tests, and every one made a test fail.
+
+---
+
 ## Contact
 
 _Upcoming: uniform grid (cell list) construction in parallel; load balance across uneven cells._

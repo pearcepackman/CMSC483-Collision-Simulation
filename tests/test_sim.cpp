@@ -416,6 +416,53 @@ TEST(Sim, PlacePlanetShiftsAndAppends) {
     EXPECT_EQ(dst.ax[2], 0.0); // forces get recomputed after setup
 }
 
+TEST(Sim, BuildPlanetsPlacesEachPlanet) {
+    Config cfg;
+    cfg.relax_max_steps = 0; // no relaxation: placement only
+    PlanetSpec s;
+    s.n = 300;
+    s.radius = 1.0;
+    s.particle_radius = 0.05;
+    s.mass = 1.0;
+    s.seed = 3;
+    s.center = Vec3{-4.0, 1.0, 0.0};
+    s.velocity = Vec3{0.5, 0.0, 0.0};
+    s.body = 0;
+    cfg.planets.push_back(s);
+    s.seed = 4;
+    s.center = Vec3{4.0, -1.0, 2.0};
+    s.velocity = Vec3{-0.5, 0.25, 0.0};
+    s.body = 1;
+    cfg.planets.push_back(s);
+
+    Particles p = build_planets(cfg, BACKEND_SERIAL);
+    ASSERT_EQ(p.size(), 600u);
+    std::size_t base = 0;
+    for (int b = 0; b < 2; ++b) {
+        // Each planet is the one make_planet builds at rest at the origin, shifted to
+        // its center and given its velocity.
+        const PlanetSpec &spec = cfg.planets[static_cast<std::size_t>(b)];
+        PlanetSpec at_rest = spec;
+        at_rest.center = Vec3{0.0, 0.0, 0.0};
+        at_rest.velocity = Vec3{0.0, 0.0, 0.0};
+        Particles ref;
+        make_planet(ref, at_rest);
+        for (std::size_t i = 0; i < ref.size(); ++i) {
+            const std::size_t k = base + i;
+            EXPECT_DOUBLE_EQ(p.x[k], ref.x[i] + spec.center.x);
+            EXPECT_DOUBLE_EQ(p.y[k], ref.y[i] + spec.center.y);
+            EXPECT_DOUBLE_EQ(p.z[k], ref.z[i] + spec.center.z);
+            EXPECT_DOUBLE_EQ(p.vx[k], spec.velocity.x);
+            EXPECT_DOUBLE_EQ(p.vy[k], spec.velocity.y);
+            EXPECT_DOUBLE_EQ(p.vz[k], spec.velocity.z);
+            EXPECT_DOUBLE_EQ(p.mass[k], ref.mass[i]);
+            EXPECT_DOUBLE_EQ(p.radius[k], ref.radius[i]);
+            EXPECT_EQ(p.body[k], b);
+        }
+        base += ref.size();
+    }
+}
+
 TEST(Sim, BuiltInScenarios) {
     SimParams params;
     Particles p;
