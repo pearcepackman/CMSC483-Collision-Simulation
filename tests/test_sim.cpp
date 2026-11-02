@@ -441,7 +441,7 @@ TEST(Sim, BuildPlanetsPlacesEachPlanet) {
     for (int b = 0; b < 2; ++b) {
         // Each planet is the one make_planet builds at rest at the origin, shifted to
         // its center and given its velocity.
-        const PlanetSpec &spec = cfg.planets[b];
+        const PlanetSpec &spec = cfg.planets[static_cast<std::size_t>(b)];
         PlanetSpec at_rest = spec;
         at_rest.center = Vec3{0.0, 0.0, 0.0};
         at_rest.velocity = Vec3{0.0, 0.0, 0.0};
