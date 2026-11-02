@@ -29,7 +29,7 @@ The GPU kernel is still the simple version. This card runs double precision abou
 | # | Milestone | Status |
 |---|---|---|
 | 0 | Repo, build system, CI | Done |
-| 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity + leapfrog done; planet generation, frame output, rendering left |
+| 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity, leapfrog and planet generation done; frame output, rendering left |
 | 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI done; planets, contact, config, relaxation, video left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
