@@ -210,6 +210,21 @@ TEST(Sim, StopsEarlyOnNaN) {
     EXPECT_EQ(r.steps_done, 0); // caught before the first step
 }
 
+// A frame that can't be saved stops the run (main then exits 1), so a run whose
+// output is missing can't look like a success.
+TEST(Sim, StopsWhenAFrameCantBeWritten) {
+    SimParams params;
+    Particles p = orbit(&params);
+    RunOptions opts;
+    opts.steps = 100;
+    opts.write_frames = true;
+    opts.out_dir = "/this/folder/does/not/exist";
+    RunResult r = run_simulation(p, params, opts, nullptr);
+    EXPECT_FALSE(r.io_ok);
+    EXPECT_TRUE(r.finite);
+    EXPECT_EQ(r.steps_done, 0); // the step-0 frame failed, so no steps were taken
+}
+
 TEST(Sim, StopsAtTheStepThatBlowsUp) {
     // A finite start that overflows during step 1: the check inside the loop must stop
     // the run right there, not carry on or only check every few steps.
