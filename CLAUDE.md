@@ -11,9 +11,11 @@ OMP_NUM_THREADS=4 ctest --preset dev                  # tests with threads
 cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # memory/UB checks
 cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # race checks (Linux)
 git ls-files '*.cpp' '*.hpp' '*.hip' | xargs clang-format --dry-run --Werror
+.venv/bin/python -m unittest discover scripts         # Python script tests
+.venv/bin/python scripts/render.py frames/<run> -o run.mp4   # frames to video
 ```
 
-Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (pinned clang-format).
+Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (pinned clang-format). Scripts: `.venv/bin/pip install -r scripts/requirements.txt` (pinned numpy, matplotlib, imageio-ffmpeg).
 
 ## Git: hard rule
 

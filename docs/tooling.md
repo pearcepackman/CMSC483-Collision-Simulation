@@ -83,6 +83,7 @@ If the Linux machine is remote (e.g. working on Pearce's PC from a laptop), use 
   `bugprone-*`, `performance-*`, `openmp-use-default-none`, `openmp-exception-escape`, `concurrency-*`.
   `openmp-use-default-none` matters a lot here: it forces every OpenMP loop to say which variables are shared and which are private, and getting that wrong is the #1 source of OpenMP races.
 - **Compiler warnings** `-Wall -Wextra -Wshadow -Wconversion -Werror` on our code only, not on GoogleTest.
+- **Python scripts** (`scripts/`) pin their packages in `scripts/requirements.txt` and install into the same `.venv` as clang-format. ffmpeg comes from the `imageio-ffmpeg` package, which ships a static binary, so nobody needs `apt`/`pacman` or root for it. Tests: `.venv/bin/python -m unittest discover scripts`.
 
 ---
 
@@ -98,6 +99,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is co
 | `tsan` | clang + libomp + Archer (found with `find /usr/lib -name 'libarcher.so*'`, loaded via `OMP_TOOL_LIBRARIES`), `tsan` preset at 4 threads | Data races in OpenMP loops. **Blocking** (#21). It first runs a **canary**, [.github/ci/tsan_canary.cpp](../.github/ci/tsan_canary.cpp), a deliberately racy loop; if TSan doesn't report it, the job fails, so a broken race checker can't pass silently. Locally: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' \| head -n 1) ctest --preset tsan`. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |
 | `viewer` | Builds the `viewer` preset (X11/GL dev packages), runs its tests, then runs `planet_view` for 60 frames under Xvfb (a virtual screen with software OpenGL) and uploads the last frame as an artifact | A viewer that no longer compiles, crashes on start, or breaks when the simulation code changes |
+| `render` | Installs `scripts/requirements.txt`, runs the script unit tests (fails if any is skipped, since a skip means a package is missing), then writes 5 frames with `planet_sim --out`, renders them with `scripts/render.py` and checks the MP4 has exactly 5 frames. Uploads the video and its last frame | A render script that no longer reads `planet_sim`'s frames, or a pinned package that stops installing |
 | `hip-compile` | In the `rocm/dev-ubuntu-24.04:7.2.4` container (same ROCm as the dev PC): `hip` preset (explicit architectures, since CMake can't detect a GPU that isn't there), CPU tests with `-LE gpu`, and `planet_sim --backend hip` must exit 1 with "no usable GPU found" | HIP syntax/type errors and warnings (`-Werror` applies to HIP too), a HIP build breaking CPU code, a crash instead of a clean error without a GPU |
 | `smoke` | ~500 particles, 200 steps: fail on NaN or energy drift above threshold | "It compiles but the physics exploded" |
 
@@ -118,7 +120,7 @@ There's little to leak in this project (no API keys). The real risks are an **SS
 
 ### Branch protection
 
-**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan`, `hip-compile` (added Oct 30, PR #51) and `viewer` (added Oct 30, PR #52). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. When `smoke` (#17) lands, add it to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
+**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan`, `hip-compile` (added Oct 30, PR #51) and `viewer` (added Oct 30, PR #52). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. When `render` (#11) and `smoke` (#17) land, add them to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
 
 ---
 

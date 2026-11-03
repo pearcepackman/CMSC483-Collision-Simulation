@@ -132,6 +132,42 @@ jobs:
           path: viewer.png
           if-no-files-found: ignore
 
+  # Quick-look render script (#11). Runs its unit tests, then renders real planet_sim
+  # frames to an MP4 and checks the video has one image per frame. The video and its
+  # last frame are uploaded, so a PR shows what a run looks like.
+  render:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build libomp-dev
+          pip install -r scripts/requirements.txt
+      - run: cmake --preset dev
+      - run: cmake --build --preset dev --target planet_sim
+      - name: Unit tests (none may be skipped; a skip means a requirement is missing)
+        run: |
+          python -m unittest discover scripts -v 2>&1 | tee unittest.log
+          test "${PIPESTATUS[0]}" -eq 0
+          # unittest's own skip markers only, so a test or path named "skipped" can't trip it.
+          if grep -qE '\.\.\. skipped|skipped=' unittest.log; then echo "a test was skipped"; exit 1; fi
+      - name: Render a real run (steps 0, 10, 20, 30, 40 -> 5 frames)
+        run: |
+          ./build/dev/planet_sim --scenario cloud --n 500 --steps 40 --output-every 10 --out frames/cloud
+          python scripts/render.py frames/cloud -o cloud.mp4 --still cloud.png
+          python -c "import imageio_ffmpeg as f; n, _ = f.count_frames_and_secs('cloud.mp4'); print(n, 'frames'); assert n == 5"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: render-video
+          path: |
+            cloud.mp4
+            cloud.png
+          if-no-files-found: ignore
+
   # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code
   # for the RX 9060 XT (gfx1200) and runs everything except the gpu-labelled tests.
   # Same ROCm version as the dev machine (Arch: 7.2.4).

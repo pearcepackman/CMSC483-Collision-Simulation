@@ -116,7 +116,9 @@ planet-collision/
 │   └── planet_view.cpp      ← live 3D window (raylib), only built with ENABLE_VIEWER
 ├── configs/                 ← scenario files (head-on, grazing, Theia-like)
 ├── scripts/
-│   ├── render.py            ← frames → images → video
+│   ├── render.py            ← frames → video (matplotlib + ffmpeg from imageio-ffmpeg)
+│   ├── test_render.py       ← its unit tests (python -m unittest discover scripts)
+│   ├── requirements.txt     ← pinned numpy, matplotlib, imageio-ffmpeg
 │   ├── plot_energy.py
 │   └── bench.py             ← run benchmarks, make speedup graphs
 └── bench/

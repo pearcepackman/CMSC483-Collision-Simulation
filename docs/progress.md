@@ -8,7 +8,7 @@ Hardware for every number below: AMD Ryzen 5 7600X (6 cores, 12 threads), AMD Ra
 
 Two planets made of particles collide. The same O(N²) gravity runs on three backends (serial, OpenMP, HIP on the GPU), and the live viewer lets you switch between them mid-collision. Before building the viewer we picked its look with a quick browser prototype running a JavaScript port of the same physics.
 
-Still to do: contact forces and relaxation (#12, #15), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), recorded runs to video (#49) and the full scaling plots (#34).
+Still to do: contact forces and relaxation (#12, #15), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
 
 ## Oct 22: Build, CI and test setup (#1, #39, #40)
 
@@ -79,3 +79,13 @@ For 2,000 particles in a unit ball, particles can be up to about 0.0688 in radiu
 ## Nov 2: Frame output (#10)
 
 `planet_sim --out <dir>` now saves the particle positions every `--output-every` steps, one CSV file per frame (`frame_00000.csv`, `frame_00001.csv`, ...), next to the energy log. Each row is a particle id, its position and which planet it came from, written with enough digits to read back the exact same numbers. A frame is about 68 bytes per particle, so a 2,000-particle run writes 136 KB per frame. Writing happens on one thread between steps, so it costs time only on the steps that output a frame. The render script (#11) turns these into a video.
+
+## Nov 3: Frames to video (#11)
+
+`scripts/render.py frames/<run> -o run.mp4` turns a run's frames into an MP4, one image per frame, colored by planet. It's a quick-look tool for checking runs; the polished videos will come from the viewer (#49). The camera stays fixed for the whole video and ignores the few particles that fly far away, so the planets don't shrink to a dot. CI renders a short real run on every PR and uploads the video.
+
+The first planets we can see: two generated planets of 2,000 particles each, moving toward each other. This still is `frame_00006.csv` (t = 0.6), from rendering the run's first 7 frames on their own, so the camera box fits the two planets instead of the whole 121-frame run:
+
+![two planets](media/render_two_planets.png)
+
+Contact forces don't exist yet (#12), so in the rest of this video both planets collapse under their own gravity and spray particles outward instead of colliding. That's the expected result without contact. M1 is done with this entry.
