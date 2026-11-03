@@ -29,7 +29,7 @@ The GPU kernel is still the simple version. This card runs double precision abou
 | # | Milestone | Status |
 |---|---|---|
 | 0 | Repo, build system, CI | Done |
-| 1 | Serial two-body orbit (leapfrog, energy conservation) | In progress: gravity, leapfrog, planet generation and frame output done; rendering left |
+| 1 | Serial two-body orbit (leapfrog, energy conservation) | Done: gravity, leapfrog, planet generation, frame output and a render script |
 | 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI done; planets, contact, config, relaxation, video left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
@@ -70,7 +70,15 @@ planet_sim --config configs/head_on.cfg --out frames/run       # planets from a 
 planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
 ```
 
-`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,total,px,py,pz`). Exit codes: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf. `--config` and frame output need #13 and #10.
+`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,total,px,py,pz`). Exit codes: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf. `--config` needs #13.
+
+Turn a run's frames into a video (a quick-look debug tool, colored by planet; ffmpeg comes with the pip packages):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt
+./build/dev/planet_sim --scenario cloud --n 2000 --steps 400 --output-every 10 --out frames/cloud
+.venv/bin/python scripts/render.py frames/cloud -o cloud.mp4 [--fps 30] [--every k] [--still last.png]
+```
 
 Measure the OpenMP speedup (release build, threads pinned to cores):
 
@@ -126,7 +134,7 @@ src/        simulator source (particles, physics, backends, CLI)
 viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
-scripts/    rendering, plotting and benchmark scripts (Python)        [coming]
+scripts/    render.py (frames to video) and its tests; plotting and benchmark scripts [coming]
 configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
 ```
