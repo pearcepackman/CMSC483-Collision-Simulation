@@ -33,7 +33,7 @@ endif()
 # Tests that run the real planet_sim program (or PROGRAM, e.g. planet_view) and check
 # its exit code and output (#14).
 function(add_cli_test name expect_exit)
-    cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST;PROGRAM" "ARGS" ${ARGN})
+    cmake_parse_arguments(T "" "OUTPUT;MUST_NOT_EXIST;PROGRAM;FRESH_DIR" "ARGS;EXPECT_FILES" ${ARGN})
     if(NOT T_PROGRAM)
         set(T_PROGRAM planet_sim)
     endif()
@@ -44,6 +44,13 @@ function(add_cli_test name expect_exit)
     endif()
     if(T_MUST_NOT_EXIST)
         list(APPEND cmd "-DMUST_NOT_EXIST=${T_MUST_NOT_EXIST}")
+    endif()
+    if(T_FRESH_DIR)
+        list(APPEND cmd "-DFRESH_DIR=${T_FRESH_DIR}")
+    endif()
+    if(T_EXPECT_FILES)
+        list(JOIN T_EXPECT_FILES "|" joined_files)
+        list(APPEND cmd "-DEXPECT_FILES=${joined_files}")
     endif()
     add_test(NAME ${name} COMMAND ${CMAKE_COMMAND} ${cmd} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_run.cmake)
 endfunction()
@@ -84,6 +91,21 @@ endif()
 add_cli_test(Cli.InfiniteDtIsUsageError 1
     ARGS --scenario orbit --dt inf
     OUTPUT "--dt needs a finite number > 0")
+# --out: a frame at steps 0, 10, 20 (numbered 0, 1, 2) plus energy.csv, and nothing more (#10).
+set(out_dir ${CMAKE_CURRENT_BINARY_DIR}/cli_out_frames)
+add_cli_test(Cli.OutWritesFramesAndEnergyLog 0
+    ARGS --scenario orbit --steps 20 --output-every 10 --out ${out_dir}
+    FRESH_DIR ${out_dir}
+    EXPECT_FILES ${out_dir}/frame_00000.csv ${out_dir}/frame_00001.csv ${out_dir}/frame_00002.csv
+                 ${out_dir}/energy.csv
+    MUST_NOT_EXIST ${out_dir}/frame_00003.csv)
+# The final step gets a frame even when it isn't a multiple of --output-every: 0, 10, 20, 25.
+set(out_dir ${CMAKE_CURRENT_BINARY_DIR}/cli_out_final_frame)
+add_cli_test(Cli.OutWritesFinalStepFrame 0
+    ARGS --scenario orbit --steps 25 --output-every 10 --out ${out_dir}
+    FRESH_DIR ${out_dir}
+    EXPECT_FILES ${out_dir}/frame_00003.csv
+    MUST_NOT_EXIST ${out_dir}/frame_00004.csv)
 
 # planet_view's argument handling. Parsing happens before any window opens, so these
 # run without a display.

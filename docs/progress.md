@@ -75,3 +75,7 @@ The GPU numbers here come from the first, simple kernel. The float and tiled ker
 Review caught a reproducibility bug that matters for comparing backends: the release build (`-march=native`) rounds floating-point math slightly differently, which made the same seed give a different planet in 1,003 of 2,000 particles. Picking lattice points by exact integer distance fixed it; the two builds now agree to 1e-16.
 
 For 2,000 particles in a unit ball, particles can be up to about 0.0688 in radius before neighbors overlap by more than 10% of a particle radius; past that, `make_planet` stops with an error instead of building a planet that would blow apart on the first step. Nothing renders planets yet; the first pictures come with frame output (#10) and the render script (#11).
+
+## Nov 2: Frame output (#10)
+
+`planet_sim --out <dir>` now saves the particle positions every `--output-every` steps, one CSV file per frame (`frame_00000.csv`, `frame_00001.csv`, ...), next to the energy log. Each row is a particle id, its position and which planet it came from, written with enough digits to read back the exact same numbers. A frame is about 68 bytes per particle, so a 2,000-particle run writes 136 KB per frame. Writing happens on one thread between steps, so it costs time only on the steps that output a frame. The render script (#11) turns these into a video.
