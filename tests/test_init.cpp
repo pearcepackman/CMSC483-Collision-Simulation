@@ -220,6 +220,9 @@ TEST(Init, ZeroParticlesIsNoOp) {
     s.n = 0;
     make_planet(p, s);
     EXPECT_EQ(p.size(), 3u);
+    s.mass = 0.0; // an empty planet may have no mass
+    make_planet(p, s);
+    EXPECT_EQ(p.size(), 3u);
 }
 
 // Just past the largest particle_radius that fits 2,000 particles (about 0.0688): the
@@ -265,4 +268,7 @@ TEST(InitDeathTest, InvalidSpecAborts) {
     s = typical_spec();
     s.mass = inf;
     EXPECT_DEATH(make_planet(p, s), bad_number);
+    s = typical_spec();
+    s.mass = 0.0; // massless particles would get NaN contact accelerations
+    EXPECT_DEATH(make_planet(p, s), "make_planet: mass must be > 0 when n > 0");
 }

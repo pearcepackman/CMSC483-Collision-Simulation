@@ -8,7 +8,7 @@ Hardware for every number below: AMD Ryzen 5 7600X (6 cores, 12 threads), AMD Ra
 
 Two planets made of particles collide. The same O(N²) gravity runs on three backends (serial, OpenMP, HIP on the GPU), and the live viewer lets you switch between them mid-collision. Before building the viewer we picked its look with a quick browser prototype running a JavaScript port of the same physics.
 
-Still to do: contact forces and relaxation (#12, #15), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
+Still to do: relaxation (#15), the contact grid (#23), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
 
 ## Oct 22: Build, CI and test setup (#1, #39, #40)
 
@@ -89,3 +89,13 @@ The first planets we can see: two generated planets of 2,000 particles each, mov
 ![two planets](media/render_two_planets.png)
 
 Contact forces don't exist yet (#12), so in the rest of this video both planets collapse under their own gravity and spray particles outward instead of colliding. That's the expected result without contact. M1 is done with this entry.
+
+## Nov 5: Contact forces (#12)
+
+Particles that overlap now push apart with a spring and lose energy through a damper. For an overlap `δ`, the force is `k·δ − c·v_n` along the line between the two centers, where `v_n` is the relative speed along that line (negative while they approach). This version checks every pair, so it is O(N²) like gravity. The uniform grid (#23) will check only nearby particles.
+
+The loop has the same shape as the reference gravity: each particle adds up the pushes from all the others, so every pair is computed twice. That doubles the arithmetic, but the two sides see exactly negated inputs, so the pair forces cancel bit for bit. A parallel version can also give each thread its own particles, so no two threads ever write to the same particle.
+
+The force is not clamped, so near the end of a damped contact the damper can briefly pull the two particles back together. In the bounce below that pull reaches about 28% of the peak push. This is the standard spring-dashpot model, and the formula that picks `c` for a target bounciness assumes it.
+
+In a head-on bounce of two particles with gravity on, the energy after the bounce matches the energy before to within 1.2e-5 of the starting kinetic energy when there is no damping, and within 3e-6 at smaller timesteps. The error doesn't shrink smoothly as the step gets smaller, because it depends on where the steps land relative to the moment of first touch. With damping set for a restitution of 0.5, the bounce loses 88% of the starting kinetic energy, against 87.5% predicted. That is 75% of the kinetic energy at impact, which gravity raised on the way in. There is no video yet. Planets that hold their shape also need the relaxation phase (#15) and a scenario that turns contact on (#13).

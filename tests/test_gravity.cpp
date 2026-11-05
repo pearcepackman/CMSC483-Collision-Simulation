@@ -257,8 +257,15 @@ TEST(GravitySerial, OverwritesPreviousAccelerations) {
 TEST(Forces, ContactOffMatchesSerialGravity) {
     Particles p = hand_pair();
     Particles expected = hand_pair();
+    // The pair is 7 apart with radii 4 + 4 and a real spring, so contact would change
+    // the result if compute_accelerations ran it while disabled.
+    for (Particles *q : {&p, &expected}) {
+        q->radius[0] = q->radius[1] = 4.0;
+    }
     SimParams params = with_softening(0.5);
     params.contact_enabled = false;
+    params.contact_k = 100.0;
+    params.contact_c = 1.0;
     compute_accelerations(p, params, BACKEND_SERIAL);
     compute_gravity_serial(expected, params);
     for (std::size_t i = 0; i < 2; ++i) {

@@ -186,6 +186,21 @@ Relative energy error |E − E₀|/|E₀|, worst value seen up to that point (ch
 
 ## Contact
 
+### Brute-force spring-dashpot contact (Nov 2026, #12)
+**Decision:** [`compute_contact_bruteforce()`](../src/contact.cpp) applies `F = (k·δ − c·v_n)·n̂` to every overlapping pair, where `δ = r_i + r_j − d` and `v_n` is the relative velocity along the line between the centers. Each particle sums the force from all the others (every pair computed twice), like the serial gravity, and adds `F / m_i` to its acceleration. The force is not clamped to "push only", and every particle mass must be greater than 0 (`make_planet` now rejects a planet with mass 0).
+**Why:** computing each pair from both sides doubles the arithmetic, but the two sides see exactly negated inputs, so the pair forces cancel bit for bit, and each thread can own a range of particles in the OpenMP and grid versions (#23) without write races. Clamping would stop the damper from pulling the pair together near the end of a contact (about 28% of the peak push in the test bounce), but the formula `c = 2ζ·sqrt(m_eff·k)` for a target restitution assumes the unclamped model. A massless particle gets 0/0 = NaN from the division, even when it touches nothing.
+**Limits of the explicit step:** two particles, measured with the planned `k = 20`, `dt = 0.002`, particle mass `1e-3` (`m_eff = 5e-4`) and no gravity. Each kick multiplies the normal relative speed by about `1 − c·dt/m_eff`, so energy grows once `c·dt/m_eff ≥ 2`:
+
+| c | c·dt/m_eff | energy after the bounce / before |
+|---|---|---|
+| 0.05 (planned) | 0.2 | 0.15 |
+| 0.2 | 0.8 | about 0 |
+| 0.5 | 2.0 | 1.17 |
+| 1.0 | 4.0 | 9.5 |
+
+A particle with many neighbors feels several dampers at once, so the real limit on `c` is lower than this. The spring force tops out at `k·(r_i + r_j)` when the centers meet, so pairs faster than about `(r_i + r_j)·sqrt(k/m_eff)` ≈ 32 pass through each other. With radius 0.0805, relative speeds of 1, 10 and 31 bounced, and 40 and 100 went through. The fastest planned impact is 2.6.
+**Evidence:** in a two-particle head-on bounce with gravity (unit masses, radius 0.5, `k = 1e4`, `dt = 1e-4`, about 440 steps per spring period), energy is kept to 1.2e-5 without damping, and damping set for restitution 0.5 loses 88% of the starting kinetic energy against 87.5% predicted. During review we ran 20 deliberately broken copies of the contact loop against the tests (wrong damper sign, `=` instead of `+=`, one radius only, the other particle's mass, a clamped force, half the pairs, and so on). 4 passed the first version of the tests: normal velocity from x only, a flipped z term, `fz` using `ny`, and touching counted as contact. Tests along a direction with three different components, and an approaching pair at exactly touching distance, now catch all 20.
+
 _Upcoming: uniform grid (cell list) construction in parallel; load balance across uneven cells._
 
 ## Scaling results
