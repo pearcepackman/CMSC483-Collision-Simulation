@@ -102,6 +102,11 @@ void make_planet(Particles &p, const PlanetSpec &spec) {
     if (spec.n == 0) {
         return;
     }
+    // Contact divides by each particle's mass, so a massless particle would get a NaN
+    // acceleration even when it touches nothing.
+    if (spec.mass == 0.0) {
+        planet_spec_error(spec, "mass must be > 0 when n > 0");
+    }
 
     // Centers stay within r_max, so each whole particle is inside the sphere even
     // after its jitter.
