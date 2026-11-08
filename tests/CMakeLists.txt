@@ -16,6 +16,8 @@ file(GLOB SIM_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_executable(sim_tests ${SIM_TEST_SOURCES})
 target_link_libraries(sim_tests PRIVATE sim_core GTest::gtest_main)
 set_project_warnings(sim_tests)
+# Lets tests load the real files in configs/ wherever ctest runs from (#13).
+target_compile_definitions(sim_tests PRIVATE "SIM_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
 # PRE_TEST: list tests when ctest runs, not at build time, so a binary that can't
 # run (e.g. a broken sanitizer runtime) fails the tests instead of the build.
 gtest_discover_tests(sim_tests DISCOVERY_MODE PRE_TEST)
@@ -106,6 +108,27 @@ add_cli_test(Cli.OutWritesFinalStepFrame 0
     FRESH_DIR ${out_dir}
     EXPECT_FILES ${out_dir}/frame_00003.csv
     MUST_NOT_EXIST ${out_dir}/frame_00004.csv)
+
+# --config: the CI smoke config loads, builds both planets and runs (#13). A bad config
+# is a setup error (exit 1) that names the file, line and key.
+# The particle count catches a planet silently dropped. head_on.cfg sits at ~94% of
+# make_planet's particle_radius limit, so it is built here too, not just parsed.
+add_cli_test(Cli.SmokeConfigRuns 0
+    ARGS --config ${PROJECT_SOURCE_DIR}/configs/smoke.cfg --steps 2
+    OUTPUT "ran 2 steps of 500 particles")
+add_cli_test(Cli.HeadOnConfigRuns 0
+    ARGS --config ${PROJECT_SOURCE_DIR}/configs/head_on.cfg --steps 1
+    OUTPUT "ran 1 steps of 4000 particles")
+# A value make_planet can't build is a clean setup error naming the planet, not an abort.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bad_planet.cfg
+    "output_every = 1\nsteps = 1\ndt = 0.01\nplanet0.n = 2000\nplanet0.radius = 1\n"
+    "planet0.particle_radius = 0.07\nplanet0.mass = 2\n")
+add_cli_test(Cli.BadPlanetConfigIsSetupError 1
+    ARGS --config ${CMAKE_CURRENT_BINARY_DIR}/bad_planet.cfg
+    OUTPUT "planet0: too many particles.*couldn't load config")
+add_cli_test(Cli.MissingConfigIsSetupError 1
+    ARGS --config ${CMAKE_CURRENT_BINARY_DIR}/no_such_config.cfg
+    OUTPUT "no_such_config.cfg: can't open the file.*couldn't load config")
 
 # planet_view's argument handling. Parsing happens before any window opens, so these
 # run without a display.

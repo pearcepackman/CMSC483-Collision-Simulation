@@ -30,7 +30,7 @@ The GPU kernel is still the simple version. This card runs double precision abou
 |---|---|---|
 | 0 | Repo, build system, CI | Done |
 | 1 | Serial two-body orbit (leapfrog, energy conservation) | Done: gravity, leapfrog, planet generation, frame output and a render script |
-| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI done; planets, contact, config, relaxation, video left |
+| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI, contact forces and scenario files done; relaxation, conservation tests, CI smoke run, video left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
@@ -70,7 +70,7 @@ planet_sim --config configs/head_on.cfg --out frames/run       # planets from a 
 planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
 ```
 
-`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,total,px,py,pz`). Exit codes: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf. `--config` needs #13.
+`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,total,px,py,pz`). Exit codes: 0 ok, 1 usage/setup error (including a bad config file), 2 the simulation produced NaN/Inf. Scenario files are `key = value` text; see [configs/head_on.cfg](configs/head_on.cfg) for every key.
 
 Turn a run's frames into a video (a quick-look debug tool, colored by planet; ffmpeg comes with the pip packages):
 
@@ -135,7 +135,7 @@ viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
 scripts/    render.py (frames to video) and its tests; plotting and benchmark scripts [coming]
-configs/    impact scenarios (head-on, grazing, Theia-like)           [coming]
+configs/    impact scenarios: head_on.cfg, smoke.cfg (CI); grazing and Theia-like [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
 ```
 

@@ -91,21 +91,33 @@ static double uniform_pm1(std::mt19937_64 &rng) {
     return static_cast<double>(rng() >> 11) * 0x1.0p-52 - 1.0;
 }
 
-void make_planet(Particles &p, const PlanetSpec &spec) {
+// Where a planet's particles go: the FCC points, their mean (subtracted to center the
+// planet) and the scale from lattice units to distance.
+struct PlanetLayout {
+    std::vector<LatticePoint> pts;
+    double mx = 0.0, my = 0.0, mz = 0.0;
+    double half_side = 0.0;
+    double jitter = 0.0;
+};
+
+// Checks spec and, if it's usable, fills *layout. Returns nullptr on success or the
+// reason the spec can't be built. make_planet and planet_spec_ok share it, so a config
+// file and the generator always agree on what is valid.
+static const char *layout_planet(const PlanetSpec &spec, PlanetLayout *layout) {
     if (spec.n < 0) {
-        planet_spec_error(spec, "n must be >= 0");
+        return "n must be >= 0";
     }
     if (!std::isfinite(spec.radius) || !std::isfinite(spec.particle_radius) ||
         !std::isfinite(spec.mass) || spec.particle_radius < 0.0 || spec.mass < 0.0) {
-        planet_spec_error(spec, "radius, particle_radius and mass must be finite and >= 0");
+        return "radius, particle_radius and mass must be finite and >= 0";
     }
     if (spec.n == 0) {
-        return;
+        return nullptr;
     }
     // Contact divides by each particle's mass, so a massless particle would get a NaN
     // acceleration even when it touches nothing.
     if (spec.mass == 0.0) {
-        planet_spec_error(spec, "mass must be > 0 when n > 0");
+        return "mass must be > 0 when n > 0";
     }
 
     // Centers stay within r_max, so each whole particle is inside the sphere even
@@ -114,7 +126,7 @@ void make_planet(Particles &p, const PlanetSpec &spec) {
     const double jitter = JITTER_FRACTION * pr;
     const double r_max = spec.radius - pr - jitter;
     if (r_max < 0.0) {
-        planet_spec_error(spec, "radius is too small for particle_radius");
+        return "radius is too small for particle_radius";
     }
 
     std::vector<LatticePoint> pts = closest_fcc_points(spec.n);
@@ -147,9 +159,43 @@ void make_planet(Particles &p, const PlanetSpec &spec) {
         // by 2 * jitter.
         double closest = std::sqrt(2.0) * half_side - 2.0 * jitter;
         if (2.0 * pr - closest >= MAX_OVERLAP_FRACTION * pr) {
-            planet_spec_error(spec, "too many particles for this radius and particle_radius");
+            return "too many particles for this radius and particle_radius";
         }
     }
+
+    layout->pts = pts;
+    layout->mx = mx;
+    layout->my = my;
+    layout->mz = mz;
+    layout->half_side = half_side;
+    layout->jitter = jitter;
+    return nullptr;
+}
+
+bool planet_spec_ok(const PlanetSpec &spec, const char **why) {
+    PlanetLayout layout;
+    const char *err = layout_planet(spec, &layout);
+    if (why != nullptr) {
+        *why = err;
+    }
+    return err == nullptr;
+}
+
+void make_planet(Particles &p, const PlanetSpec &spec) {
+    PlanetLayout layout;
+    const char *err = layout_planet(spec, &layout);
+    if (err != nullptr) {
+        planet_spec_error(spec, err);
+    }
+    if (spec.n == 0) {
+        return;
+    }
+    const std::vector<LatticePoint> &pts = layout.pts;
+    const std::size_t n = pts.size();
+    const double mx = layout.mx, my = layout.my, mz = layout.mz;
+    const double half_side = layout.half_side;
+    const double jitter = layout.jitter;
+    const double pr = spec.particle_radius;
 
     const std::size_t base = p.size();
     p.resize(base + n);
