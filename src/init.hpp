@@ -16,8 +16,14 @@ struct PlanetSpec {
     int body = 0;      // id written into Particles::body
 };
 
-// Appends spec.n particles filling a sphere, reproducible from spec.seed.
+// Appends spec.n particles filling a sphere, reproducible from spec.seed. Aborts with
+// the reason if planet_spec_ok would reject spec.
 void make_planet(Particles &p, const PlanetSpec &spec);
+
+// True if make_planet can build spec. Otherwise false, and *why (if not null) gets the
+// reason, e.g. "too many particles for this radius and particle_radius". Lets callers
+// such as load_config report a bad spec cleanly instead of aborting.
+bool planet_spec_ok(const PlanetSpec &spec, const char **why);
 
 // Runs damped steps until kinetic energy drops below ke_threshold or max_steps
 // is reached, so a freshly generated planet settles into a stable ball.
