@@ -8,7 +8,7 @@ Hardware for every number below: AMD Ryzen 5 7600X (6 cores, 12 threads), AMD Ra
 
 Two planets made of particles collide. The same O(N²) gravity runs on three backends (serial, OpenMP, HIP on the GPU), and the live viewer lets you switch between them mid-collision. Before building the viewer we picked its look with a quick browser prototype running a JavaScript port of the same physics.
 
-Still to do: relaxation (#15), the contact grid (#23), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
+Still to do: the contact grid (#23), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
 
 ## Oct 22: Build, CI and test setup (#1, #39, #40)
 
@@ -117,3 +117,19 @@ Before the impact, each planet now settles on its own into a stable ball. The pl
 The two head-on planets settle in about 866 steps each and shrink by 3%. This fixes the energy rises found with the scenario files. In the first 300 steps of the head-on run, kinetic plus gravitational energy used to jump by 0.065 and 0.026 as the unrelaxed planets bounced. Now the largest rise is 2e-6.
 
 Relaxation is the same O(N²) force loop as the main run, so it costs real time: about a minute (53 s and 61 s in two runs) for the two 2,000-particle planets on 22 threads. On the small smoke planets, 22 threads are again much slower than serial, because each thread gets only about 11 particles.
+
+## Nov 19: First collision video and energy plot (#18)
+
+The head-on scenario (`configs/head_on.cfg`, two relaxed planets of 2,000 particles each) now runs from start to finish. The planets fall toward each other, touch at about t = 2.4, and merge into one body that is nearly at rest by t = 10. The video isn't committed; it is linked in the PR. The left still is from rendering frames 0 to 52 on their own, the right one is the last frame of the full video:
+
+| t = 2.6, just after contact | t = 10, merged |
+|---|---|
+| ![impact](media/render_head_on_impact.png) | ![merged](media/render_head_on_merged.png) |
+
+`scripts/plot_energy.py` turns a run's `energy.csv` into the plot below and prints the total change and the largest rise of the total between two rows of the log. Gravity speeds the planets up from a kinetic energy of 0.5 to 1.89 at contact. After that the logged total falls by 2.52, which is 46% of the starting total of -5.53, as the contact dampers turn motion into heat, and the merged body ends with a kinetic energy of 0.0013.
+
+![Head-on energy](figures/fig_head_on_energy.png)
+
+The logged total does rise once, by 0.028 between steps 1250 and 1275, as the two planets push back off each other. This is the gap in the log found with the scenario files: `energy.csv` doesn't count the energy held in compressed contact springs. Computed from the frames, the springs held 0.33 at step 1250 and 0.12 at step 1275. With that energy added, the total never rises by more than 5e-7 between any two of the 201 frames, and those tiny rises all come before contact. Adding spring energy to the log is #59.
+
+The run took 444 s for 5,000 steps (0.089 s per step) on 22 threads with the dev build, plus about a minute of relaxation, and rendering its 201 frames took 26 s. Gravity runs on all threads, but contact is still the serial all-pairs version, so this time is not a scaling result. The contact grid (#23) comes next.

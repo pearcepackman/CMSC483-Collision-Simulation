@@ -30,7 +30,7 @@ The GPU kernel is still the simple version. This card runs double precision abou
 |---|---|---|
 | 0 | Repo, build system, CI | Done |
 | 1 | Serial two-body orbit (leapfrog, energy conservation) | Done: gravity, leapfrog, planet generation, frame output and a render script |
-| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI, contact forces, scenario files and planet relaxation done; conservation tests, CI smoke run, video left |
+| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI, contact forces, scenario files, planet relaxation, first collision video and energy plot done; conservation tests and CI smoke run left |
 | 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
 | 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
@@ -78,6 +78,13 @@ Turn a run's frames into a video (a quick-look debug tool, colored by planet; ff
 python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt
 ./build/dev/planet_sim --scenario cloud --n 2000 --steps 400 --output-every 10 --out frames/cloud
 .venv/bin/python scripts/render.py frames/cloud -o cloud.mp4 [--fps 30] [--every k] [--still last.png]
+```
+
+Plot a run's energy log (kinetic, potential, total, and the change in the total). It also prints the largest rise of the total; `--max-rise X` exits 3 if that rise is above X. The log leaves out energy stored in compressed contact springs, so a collision can show a small rise that isn't real:
+
+```bash
+./build/dev/planet_sim --config configs/head_on.cfg --out frames/head_on
+.venv/bin/python scripts/plot_energy.py frames/head_on/energy.csv -o energy.png [--title T] [--max-rise X]
 ```
 
 Measure the OpenMP speedup (release build, threads pinned to cores):
@@ -134,7 +141,7 @@ src/        simulator source (particles, physics, backends, CLI)
 viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
-scripts/    render.py (frames to video) and its tests; plotting and benchmark scripts [coming]
+scripts/    render.py (frames to video), plot_energy.py (energy plot) and their tests; benchmark scripts [coming]
 configs/    impact scenarios: head_on.cfg, smoke.cfg (CI); grazing and Theia-like [coming]
 bench/      micro-benchmarks (bench_gravity) and committed results
 ```

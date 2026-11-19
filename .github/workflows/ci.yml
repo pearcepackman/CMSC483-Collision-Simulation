@@ -159,6 +159,8 @@ jobs:
           ./build/dev/planet_sim --scenario cloud --n 500 --steps 40 --output-every 10 --out frames/cloud
           python scripts/render.py frames/cloud -o cloud.mp4 --still cloud.png
           python -c "import imageio_ffmpeg as f; n, _ = f.count_frames_and_secs('cloud.mp4'); print(n, 'frames'); assert n == 5"
+      - name: Plot the same run's energy log (fails if energy.csv's format and plot_energy.py disagree)
+        run: python scripts/plot_energy.py frames/cloud/energy.csv -o energy.png --title "CI cloud run"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -166,6 +168,7 @@ jobs:
           path: |
             cloud.mp4
             cloud.png
+            energy.png
           if-no-files-found: ignore
 
   # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code
