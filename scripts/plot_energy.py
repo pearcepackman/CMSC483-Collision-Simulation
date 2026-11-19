@@ -1,0 +1,195 @@
+"""Energy plot of a run: planet_sim's energy.csv -> PNG, plus a summary on stdout.
+
+    python scripts/plot_energy.py frames/run1/energy.csv -o energy.png [--title T] [--max-rise X]
+
+Plots kinetic, potential and total energy against time, and under it the change in
+total energy since the start, on its own scale, so small rises are visible. Prints the
+total change and the largest rise of the total between two rows. With --max-rise X,
+exits 3 if that rise is above X, so a script or CI job can fail a run whose energy went
+up (damping only ever removes energy). Exit codes: 0 ok, 1 bad input, 2 bad command
+line, 3 rise above --max-rise. Needs scripts/requirements.txt (numpy, matplotlib).
+
+energy.csv's total is kinetic + gravitational only: energy stored in compressed contact
+springs isn't counted, so a large impact can show small rises that come from the log.
+"""
+
+import argparse
+import os
+import sys
+
+import numpy as np
+
+# What planet_sim's write_energy_header() writes (src/sim.cpp).
+HEADER = "step,t,kinetic,potential,total,px,py,pz"
+COLUMNS = HEADER.split(",")
+
+# Blue, orange and green, picked to stay distinguishable with the common kinds of color
+# blindness. The green is under 3:1 contrast on white, so every line is also named by a
+# text label at its end, and the labels replace a legend.
+COLORS = {"kinetic": "#2a78d6", "potential": "#eb6834", "total": "#1baf7a"}
+TEXT = "#0b0b0b"
+TEXT_SECONDARY = "#52514e"
+GRID = "#e4e3df"
+
+
+def load_energy(path):
+    """Reads energy.csv. Returns a dict of numpy arrays, one per column.
+    Raises ValueError, naming the file, if it isn't in write_energy_row()'s format."""
+    with open(path, newline="") as f:
+        header = f.readline().rstrip("\r\n")
+        rows = f.read().splitlines()  # handles \n and \r\n
+    if header != HEADER:
+        raise ValueError(f"{path}: expected header '{HEADER}', got '{header}'")
+    if rows and rows[-1] == "":
+        rows.pop()  # one blank line at the end is fine
+    if "" in rows:
+        raise ValueError(f"{path}: blank line in the middle of the log")
+    if not rows:
+        raise ValueError(f"{path}: no rows after the header")
+    try:
+        # comments=None: a '#' line is an error, not something to skip.
+        data = np.loadtxt(rows, delimiter=",", ndmin=2, comments=None)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from None
+    if data.shape[1] != len(COLUMNS):
+        raise ValueError(f"{path}: expected {len(COLUMNS)} columns, got {data.shape[1]}")
+    out = {name: data[:, k] for k, name in enumerate(COLUMNS)}
+    steps = out["step"]
+    if not np.all(steps == np.round(steps)) or np.any(np.diff(steps) <= 0):
+        raise ValueError(f"{path}: steps must be whole numbers that only go up")
+    return out
+
+
+def summarize(e):
+    """Total energy change over the run and the largest rise between two rows.
+    Returns a dict: e0, e1, change, max_rise (0 if the total never went up),
+    rise_step (the row where that rise ended, or None), finite (no NaN/Inf anywhere)."""
+    total = e["total"]
+    finite = bool(np.all(np.isfinite(np.column_stack([e[c] for c in COLUMNS]))))
+    rises = np.diff(total)
+    max_rise, rise_step = 0.0, None
+    if len(rises) > 0 and finite and np.max(rises) > 0.0:
+        k = int(np.argmax(rises))
+        max_rise, rise_step = float(rises[k]), int(e["step"][k + 1])
+    return {"e0": float(total[0]), "e1": float(total[-1]), "change": float(total[-1] - total[0]),
+            "max_rise": max_rise, "rise_step": rise_step, "finite": finite}
+
+
+def spread(ys, gap):
+    """Moves values apart, keeping their order, until neighbors are at least gap apart.
+    Values that are already far enough apart don't move; a cluster that has to spread
+    stays centered on where its values were. Returns them in the input order."""
+    order = sorted(range(len(ys)), key=lambda k: ys[k])
+    groups = []  # [first value of the group after spreading, original values]
+    for k in order:
+        groups.append([ys[k], [ys[k]]])
+        # Merge with the group below while the two overlap, then recenter the merged group.
+        while len(groups) > 1:
+            lo_start, lo_vals = groups[-2]
+            hi_start, hi_vals = groups[-1]
+            if lo_start + gap * len(lo_vals) <= hi_start:
+                break
+            vals = lo_vals + hi_vals
+            center = sum(vals) / len(vals)
+            groups[-2:] = [[center - gap * (len(vals) - 1) / 2.0, vals]]
+    spread_sorted = [start + gap * j for start, vals in groups for j in range(len(vals))]
+    result = [0.0] * len(ys)
+    for k, idx in enumerate(order):
+        result[idx] = spread_sorted[k]
+    return result
+
+
+def label_line_ends(ax, t_end, ends):
+    """Text label at the end of each line, in text color (the line carries the identity).
+    Lines that end close together (potential and total, once the planets are at rest)
+    get their labels pushed apart so they don't print on top of each other."""
+    names = list(ends)
+    to_screen = ax.transData.transform
+    ys = [to_screen((t_end, ends[n]))[1] for n in names]  # pixels
+    gap = 11 * ax.figure.dpi / 72.0  # 11 points
+    for name, y, y_label in zip(names, ys, spread(ys, gap)):
+        ax.annotate(name, (t_end, ends[name]), xytext=(6, (y_label - y) * 72.0 / ax.figure.dpi),
+                    textcoords="offset points", va="center", color=TEXT, fontsize=9)
+
+
+def plot(e, out, title=None):
+    """Two stacked panels sharing the time axis: the three energies, then the change in
+    total energy since the start."""
+    import matplotlib
+
+    matplotlib.use("Agg")  # no window needed, so this runs over SSH and in CI
+    import matplotlib.pyplot as plt
+
+    t = e["t"]
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(8, 6), dpi=100, sharex=True,
+                                      gridspec_kw={"height_ratios": [2, 1]})
+    for ax in (top, bottom):
+        ax.grid(True, color=GRID, linewidth=0.8)
+        ax.set_axisbelow(True)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color(TEXT_SECONDARY)
+        ax.tick_params(colors=TEXT_SECONDARY)
+
+    names = ("kinetic", "potential", "total")
+    for name in names:
+        top.plot(t, e[name], color=COLORS[name], linewidth=2, label=name)
+    top.set_ylabel("energy (G = 1)", color=TEXT)
+    top.set_title(title if title else "Energy", color=TEXT, loc="left")
+
+    bottom.plot(t, e["total"] - e["total"][0], color=COLORS["total"], linewidth=2)
+    bottom.axhline(0.0, color=TEXT_SECONDARY, linewidth=0.8)
+    bottom.set_ylabel("total - start", color=TEXT)
+    bottom.set_xlabel("time t", color=TEXT)
+
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.88)  # room for the end labels
+    label_line_ends(top, t[-1], {name: e[name][-1] for name in names})
+    fig.savefig(out, dpi=100)
+    plt.close(fig)
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description="Plot planet_sim's energy.csv.")
+    parser.add_argument("log", help="energy.csv written by planet_sim --out")
+    parser.add_argument("-o", "--out", required=True, help="output image, e.g. energy.png")
+    parser.add_argument("--title", help="plot title (default 'Energy')")
+    parser.add_argument("--max-rise", type=float,
+                        help="exit 3 if total energy rises by more than this between two rows")
+    args = parser.parse_args(argv)
+    if args.max_rise is not None and not (args.max_rise >= 0.0 and np.isfinite(args.max_rise)):
+        parser.error("--max-rise needs a finite number >= 0")  # exits 2
+    if not os.path.isdir(os.path.dirname(os.path.abspath(args.out))):
+        print(f"plot_energy.py: the folder for '{args.out}' doesn't exist", file=sys.stderr)
+        return 1
+    try:
+        e = load_energy(args.log)
+    except (OSError, ValueError) as err:
+        print(f"plot_energy.py: {err}", file=sys.stderr)
+        return 1
+    s = summarize(e)
+    try:
+        plot(e, args.out, title=args.title)
+    except (OSError, ValueError) as err:  # ValueError: an image type matplotlib can't write
+        print(f"plot_energy.py: writing '{args.out}' failed: {err}", file=sys.stderr)
+        return 1
+    rel = s["change"] / abs(s["e0"]) if s["e0"] != 0.0 else float("nan")
+    print(f"wrote {args.out}: {len(e['step'])} rows, total energy {s['e0']:.6g} -> {s['e1']:.6g} "
+          f"(change {s['change']:.3g}, {rel:.3g} of the start)")
+    if not s["finite"]:
+        print("plot_energy.py: the log has NaN/Inf values (the run blew up)", file=sys.stderr)
+        return 1
+    if s["rise_step"] is None:
+        print("total energy never rose")
+    else:
+        print(f"largest rise of total energy: {s['max_rise']:.3g} (ending at step {s['rise_step']})")
+    if args.max_rise is not None and s["max_rise"] > args.max_rise:
+        print(f"plot_energy.py: total energy rose by {s['max_rise']:.3g}, more than "
+              f"--max-rise {args.max_rise:g}", file=sys.stderr)
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
