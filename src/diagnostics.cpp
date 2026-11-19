@@ -26,3 +26,11 @@ double kinetic_energy(const Particles &p) {
     }
     return ke;
 }
+
+double total_heat(const Particles &p) {
+    double q = 0.0;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        q += p.heat[i];
+    }
+    return q;
+}

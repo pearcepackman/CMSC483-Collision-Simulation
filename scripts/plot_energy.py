@@ -2,15 +2,17 @@
 
     python scripts/plot_energy.py frames/run1/energy.csv -o energy.png [--title T] [--max-rise X]
 
-Plots kinetic, potential and total energy against time, and under it the change in
+Plots kinetic, potential, heat and total energy against time, and under it the change in
 total energy since the start, on its own scale, so small rises are visible. Prints the
 total change and the largest rise of the total between two rows. With --max-rise X,
 exits 3 if that rise is above X, so a script or CI job can fail a run whose energy went
-up (damping only ever removes energy). Exit codes: 0 ok, 1 bad input, 2 bad command
-line, 3 rise above --max-rise. Needs scripts/requirements.txt (numpy, matplotlib).
+up by more than the timestep error. Exit codes: 0 ok, 1 bad input, 2 bad command line,
+3 rise above --max-rise. Needs scripts/requirements.txt (numpy, matplotlib).
 
-energy.csv's total is kinetic + gravitational only: energy stored in compressed contact
-springs isn't counted, so a large impact can show small rises that come from the log.
+energy.csv's total is kinetic + gravitational + heat (the energy contact damping has
+turned into heat), so it should stay nearly flat, with small timestep-sized ups and
+downs. During an impact it dips and recovers: energy stored in compressed contact
+springs isn't counted yet (#59), and heat is booked half a step early.
 """
 
 import argparse
@@ -20,13 +22,15 @@ import sys
 import numpy as np
 
 # What planet_sim's write_energy_header() writes (src/sim.cpp).
-HEADER = "step,t,kinetic,potential,total,px,py,pz"
+HEADER = "step,t,kinetic,potential,heat,total,px,py,pz"
 COLUMNS = HEADER.split(",")
+ENERGIES = ("kinetic", "potential", "heat", "total")
 
-# Blue, orange and green, picked to stay distinguishable with the common kinds of color
-# blindness. The green is under 3:1 contrast on white, so every line is also named by a
-# text label at its end, and the labels replace a legend.
-COLORS = {"kinetic": "#2a78d6", "potential": "#eb6834", "total": "#1baf7a"}
+# Blue, orange, yellow and green, picked to stay distinguishable with the common kinds
+# of color blindness. Each keeps its color from before heat was added. The yellow and
+# green are under 3:1 contrast on white, so every line is also named by a text label at
+# its end, and the labels replace a legend.
+COLORS = {"kinetic": "#2a78d6", "potential": "#eb6834", "heat": "#eda100", "total": "#1baf7a"}
 TEXT = "#0b0b0b"
 TEXT_SECONDARY = "#52514e"
 GRID = "#e4e3df"
@@ -132,7 +136,7 @@ def plot(e, out, title=None):
             ax.spines[side].set_color(TEXT_SECONDARY)
         ax.tick_params(colors=TEXT_SECONDARY)
 
-    names = ("kinetic", "potential", "total")
+    names = ENERGIES
     for name in names:
         top.plot(t, e[name], color=COLORS[name], linewidth=2, label=name)
     top.set_ylabel("energy (G = 1)", color=TEXT)

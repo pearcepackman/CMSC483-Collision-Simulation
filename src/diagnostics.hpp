@@ -7,3 +7,5 @@
 double total_mass(const Particles &p);
 Vec3 total_momentum(const Particles &p);
 double kinetic_energy(const Particles &p);
+// Sum of p.heat: the energy contact damping has turned into heat so far.
+double total_heat(const Particles &p);

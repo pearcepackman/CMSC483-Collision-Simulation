@@ -49,7 +49,11 @@ RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions
 std::size_t first_non_finite(const Particles &p);
 
 // The energy log: a header, then one row per output step:
-//   step,t,kinetic,potential,total,px,py,pz
+//   step,t,kinetic,potential,heat,total,px,py,pz
+// with total = kinetic + potential + heat. While particles are in contact the total can
+// rise a little: energy stored in compressed contact springs isn't counted yet (#59),
+// and each step's heat is booked when its forces are computed, half a step before the
+// kinetic energy finishes dropping. Both are gone once the contacts end.
 void write_energy_header(FILE *f);
 void write_energy_row(FILE *f, int step, double t, const Particles &p, const SimParams &params);
 
@@ -58,7 +62,7 @@ void write_energy_row(FILE *f, int step, double t, const Particles &p, const Sim
 bool finish_log(FILE *f);
 
 // Appends `planet` to dst, shifted by center and moving with velocity (added to each
-// particle's own velocity). Masses, radii and body ids are kept.
+// particle's own velocity). Masses, radii, body ids and heat are kept.
 void place_planet(Particles &dst, const Particles &planet, Vec3 center, Vec3 velocity);
 
 // Builds the starting particles from a config: each planet is generated at rest at the
@@ -68,7 +72,8 @@ void place_planet(Particles &dst, const Particles &planet, Vec3 center, Vec3 vel
 // before calling this (setup_run does). Notes on stderr, after which the run goes on: a
 // planet that doesn't settle within relax_max_steps, one that became NaN/Inf while
 // relaxing (sim_init then refuses to start), or a relax_drag so strong for the planet
-// (drag x dynamical time > MAX_RELAX_DRAG_T_DYN) that "settled" can't be trusted.
+// (drag x dynamical time > MAX_RELAX_DRAG_T_DYN) that "settled" can't be trusted, or a
+// contact damper too strong for the lightest pair of particles (c * dt / m_eff >= 2).
 // ax/ay/az of the result are not valid (sim_init).
 Particles build_planets(const Config &cfg, Backend backend);
 

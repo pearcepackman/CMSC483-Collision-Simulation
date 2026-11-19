@@ -26,6 +26,12 @@ void leapfrog_step(Particles &p, const SimParams &params, Backend backend) {
     // Forces at the new positions. These also serve as the next step's first kick.
     compute_accelerations(p, params, backend);
 
+    // Contact heating over this step, at the rate from the half-step velocities. Done
+    // here, once per step, so extra force evaluations outside a step add no heat.
+    for (std::size_t i = 0; i < n; ++i) {
+        p.heat[i] += p.heat_rate[i] * dt;
+    }
+
     // Kick: the second half step of velocity.
     for (std::size_t i = 0; i < n; ++i) {
         p.vx[i] += p.ax[i] * half_dt;

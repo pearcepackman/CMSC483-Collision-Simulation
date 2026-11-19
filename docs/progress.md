@@ -133,3 +133,15 @@ The head-on scenario (`configs/head_on.cfg`, two relaxed planets of 2,000 partic
 The logged total does rise once, by 0.028 between steps 1250 and 1275, as the two planets push back off each other. This is the gap in the log found with the scenario files: `energy.csv` doesn't count the energy held in compressed contact springs. Computed from the frames, the springs held 0.33 at step 1250 and 0.12 at step 1275. With that energy added, the total never rises by more than 5e-7 between any two of the 201 frames, and those tiny rises all come before contact. Adding spring energy to the log is #59.
 
 The run took 444 s for 5,000 steps (0.089 s per step) on 22 threads with the dev build, plus about a minute of relaxation, and rendering its 201 frames took 26 s. Gravity runs on all threads, but contact is still the serial all-pairs version, so this time is not a scaling result. The contact grid (#23) comes next.
+
+## Nov 19: Contact heat (#46)
+
+The energy the contact dampers remove now goes somewhere: each particle stores it as heat. When two particles are pressed together and moving, the damper's power is split half to each, and the energy log has a new `heat` column. Its `total` is now kinetic + potential + heat, so instead of falling during a collision it should stay flat, which is a much stronger check than "never rises". The heat will also drive the white-hot impact coloring in the viewer (#47).
+
+The same head-on run as above, now with heat. The motion is exactly the same; only the bookkeeping changed. Heat (yellow) climbs to 2.48 while kinetic energy drops, and the total goes from -5.53 to -5.57 instead of to -8.05. The dip of 0.33 at t = 2.5 is the energy held in compressed contact springs, which the log doesn't count yet (#59):
+
+![Head-on energy with heat](figures/fig_head_on_heat.png)
+
+Getting the heat right took one correction. The damper's strength is computed from the velocities halfway through a step, but by the time it has acted, those velocities have already shrunk. Booking the plain `c·vn²·dt` counted about 10% too much heat at the head-on settings. Multiplying by `1 − c·dt/(2·m_eff)` fixes that: in a two-particle bounce, kinetic + potential + heat afterwards matches the start to 1e-5 of the starting kinetic energy, against 2.7e-3 without it. In the head-on run, heat accounts for 98.7% of the energy the dampers removed.
+
+For the parallel versions of contact (#23, #27), each particle's heating rate is written only by the loop iteration that handles that particle, so threads can split the particles without ever writing to the same memory, the same way as for the forces.

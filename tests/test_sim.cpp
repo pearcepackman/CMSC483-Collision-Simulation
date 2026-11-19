@@ -353,23 +353,68 @@ TEST(Sim, EnergyLogHasOneRowPerOutputStep) {
     std::vector<std::string> lines = read_lines(log);
     std::fclose(log);
     ASSERT_EQ(lines.size(), 1u + 11u); // header + steps 0, 10, ..., 100
-    EXPECT_EQ(lines[0], "step,t,kinetic,potential,total,px,py,pz\n");
+    EXPECT_EQ(lines[0], "step,t,kinetic,potential,heat,total,px,py,pz\n");
 
-    // Total energy (column 5) stays within the orbit test's bound of its start (-0.125).
+    // Total energy (column 6) stays within the orbit test's bound of its start (-0.125).
     for (std::size_t row = 1; row < lines.size(); ++row) {
         int step = 0;
-        double t = 0, ke = 0, pe = 0, e = 0, px = 0, py = 0, pz = 0;
-        ASSERT_EQ(std::sscanf(lines[row].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step, &t, &ke,
-                              &pe, &e, &px, &py, &pz),
-                  8)
+        double t = 0, ke = 0, pe = 0, heat = -1, e = 0, px = 0, py = 0, pz = 0;
+        ASSERT_EQ(std::sscanf(lines[row].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step, &t,
+                              &ke, &pe, &heat, &e, &px, &py, &pz),
+                  9)
             << lines[row];
         EXPECT_EQ(step, static_cast<int>(row - 1) * 10);
         EXPECT_LE(std::fabs(t - step * params.dt), 1e-15 * (1.0 + std::fabs(t)));
+        EXPECT_EQ(heat, 0.0); // no contact in the orbit, so nothing heats up
         EXPECT_LE(std::fabs(e - (-0.125)), 1e-5 * 0.125);
         EXPECT_LE(std::fabs(ke + pe - e), 1e-14);
         // Momentum starts at exactly zero and the mirror-image pair keeps it there.
         EXPECT_LE(std::fabs(px) + std::fabs(py) + std::fabs(pz), 1e-15);
     }
+}
+
+TEST(Sim, EnergyLogCountsHeatInTheTotal) {
+    // A damped head-on bounce of two unit masses (the contact tests' setup, restitution
+    // about 0.5): after it, kinetic + potential has dropped by ~0.88 of the starting
+    // kinetic energy, and the heat column must hold that energy so the total stays put.
+    SimParams params;
+    params.dt = 1e-4;
+    params.softening = 0.0;
+    params.contact_enabled = true;
+    params.contact_k = 1e4;
+    params.contact_c = 30.4;
+    Particles p;
+    p.resize(2);
+    p.x[0] = -0.6;
+    p.x[1] = 0.6;
+    p.vx[0] = 1.0;
+    p.vx[1] = -1.0;
+    p.radius[0] = p.radius[1] = 0.5;
+    p.mass[0] = p.mass[1] = 1.0;
+    FILE *log = std::tmpfile();
+    ASSERT_NE(log, nullptr);
+    write_energy_header(log);
+    RunOptions opts;
+    opts.steps = 3000;
+    opts.output_every = 3000;
+    ASSERT_TRUE(run_simulation(p, params, opts, log).finite);
+    std::vector<std::string> lines = read_lines(log);
+    std::fclose(log);
+    ASSERT_EQ(lines.size(), 3u); // header, step 0, step 3000
+
+    double ke[2], pe[2], heat[2], e[2];
+    for (std::size_t r = 0; r < 2; ++r) {
+        int step = 0;
+        double t = 0, px = 0, py = 0, pz = 0;
+        ASSERT_EQ(std::sscanf(lines[r + 1].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step, &t,
+                              &ke[r], &pe[r], &heat[r], &e[r], &px, &py, &pz),
+                  9);
+        EXPECT_EQ(e[r], ke[r] + pe[r] + heat[r]);
+    }
+    EXPECT_EQ(heat[0], 0.0);
+    EXPECT_NEAR(heat[1], total_heat(p), 1e-15);
+    EXPECT_GT(heat[1], 0.5 * ke[0]);                 // most of the energy became heat
+    EXPECT_LT(std::fabs(e[1] - e[0]), 1e-4 * ke[0]); // and the total kept it
 }
 
 TEST(Sim, LogsTheFinalStepEvenIfNotAMultiple) {
@@ -415,6 +460,8 @@ TEST(Sim, PlacePlanetShiftsAndAppends) {
     planet.mass[0] = planet.mass[1] = 2.0;
     planet.radius[0] = planet.radius[1] = 0.1;
     planet.body[0] = planet.body[1] = 3;
+    planet.heat[1] = 0.75;     // a planet that already heated up keeps its heat
+    planet.heat_rate[1] = 9.0; // the rate isn't copied: sim_init recomputes it
 
     Particles dst;
     dst.resize(1); // one particle already there
@@ -428,7 +475,10 @@ TEST(Sim, PlacePlanetShiftsAndAppends) {
     EXPECT_DOUBLE_EQ(dst.mass[2], 2.0);
     EXPECT_DOUBLE_EQ(dst.radius[2], 0.1);
     EXPECT_EQ(dst.body[2], 3);
+    EXPECT_EQ(dst.heat[2], 0.75);
+    EXPECT_EQ(dst.heat[1], 0.0);
     EXPECT_EQ(dst.ax[2], 0.0); // forces get recomputed after setup
+    EXPECT_EQ(dst.heat_rate[2], 0.0);
 }
 
 TEST(Sim, BuildPlanetsPlacesEachPlanet) {

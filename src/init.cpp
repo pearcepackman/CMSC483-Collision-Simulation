@@ -295,6 +295,10 @@ RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend,
         }
         calm = ke < ke_threshold ? calm + 1 : 0;
     }
+    // Relaxation is setup, not part of the collision: the planet starts the run cold.
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        p.heat[i] = 0.0;
+    }
     r.settled = calm >= r.hold;
     return r;
 }

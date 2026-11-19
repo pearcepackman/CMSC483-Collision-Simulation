@@ -253,6 +253,25 @@ TEST(Relax, StopsAtMaxSteps) {
     }
 }
 
+TEST(Relax, PlanetStartsTheRunCold) {
+    // 50 normal steps on a fresh planet heat it up (it sags, so contacts move) ...
+    Particles hot;
+    make_planet(hot, small_planet());
+    SimParams params = relax_params();
+    compute_accelerations(hot, params, BACKEND_SERIAL);
+    for (int s = 0; s < 50; ++s) {
+        leapfrog_step(hot, params, BACKEND_SERIAL);
+    }
+    ASSERT_GT(total_heat(hot), 0.0);
+    // ... but after relaxing, every particle's heat is back to zero.
+    Particles p;
+    make_planet(p, small_planet());
+    relax_planet(p, params, BACKEND_SERIAL, kDrag, kThreshold, 50);
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        ASSERT_EQ(p.heat[i], 0.0) << "particle " << i;
+    }
+}
+
 TEST(Relax, SettlingOnTheLastAllowedStepCounts) {
     // With exactly the steps it needs, the planet settles (no off-by-one), and one step
     // fewer is not enough.
@@ -404,6 +423,34 @@ TEST(Sim, BuildPlanetsNoNoteWhenSettlingOnTheLastStep) {
     Config cfg = one_planet_config();
     cfg.relax_max_steps = smoke_planet_steps();
     Particles p;
+    EXPECT_EQ(build_stderr(cfg, &p), "");
+}
+
+TEST(Sim, BuildPlanetsWarnsAboutTooStrongDamper) {
+    // Smoke planet: particles of mass 0.25 / 250 = 1e-3, so m_eff = 5e-4 for a pair, and
+    // at dt = 0.002, c * dt / m_eff = 4c. Past 2 the explicit damper is unstable (each
+    // step flips and grows the approach speed) and the heat it books goes negative.
+    Config cfg = one_planet_config();
+    cfg.relax_max_steps = 0;    // the note is about the settings, no need to run anything
+    cfg.params.contact_c = 0.6; // 2.4
+    Particles p;
+    std::string err = build_stderr(cfg, &p);
+    EXPECT_NE(err.find("note: contact_c = 0.6 is too strong at dt = 0.002"), std::string::npos)
+        << err;
+    EXPECT_NE(err.find("c * dt / m_eff = 2.4"), std::string::npos) << err;
+    cfg.params.contact_c = 0.45; // 1.8: stable, no note
+    EXPECT_EQ(build_stderr(cfg, &p), "");
+    // The lightest pair decides: a second planet of lighter particles (mass 0.1 / 250 =
+    // 4e-4, m_eff 2e-4) brings 0.45 to 4.5.
+    PlanetSpec light = small_planet();
+    light.mass = 0.1;
+    light.center = Vec3{3.0, 0.0, 0.0};
+    light.body = 1;
+    cfg.planets.push_back(light);
+    err = build_stderr(cfg, &p);
+    EXPECT_NE(err.find("c * dt / m_eff = 4.5"), std::string::npos) << err;
+    // Contact off: no damper, no note.
+    cfg.params.contact_enabled = false;
     EXPECT_EQ(build_stderr(cfg, &p), "");
 }
 

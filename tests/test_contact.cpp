@@ -216,10 +216,131 @@ TEST(Contact, ComputeAccelerationsIsGravityPlusContact) {
     EXPECT_NEAR(p.ax[1], -(gravity - spring), 1e-12);
 }
 
+// ---- Heat from the damper (#46) ----
+
+TEST(Contact, HeatRateIsHalfTheDamperPowerEach) {
+    // Unequal masses 2 and 0.5 (m_eff = 0.4), approaching at relative normal speed 2,
+    // overlap 0.1. Damper power c * vn^2 = 2 * 4 = 8, times the leapfrog factor
+    // 1 - c dt / (2 m_eff) = 1 - 2 * 0.1 / 0.8 = 0.75, gives 6, so 3 for each particle.
+    Particles p = pair_on_x(0.0, 0.9, 0.5, 0.5, 2.0, 0.5);
+    p.vx[0] = 1.0;
+    p.vx[1] = -1.0;
+    p.heat_rate[0] = p.heat_rate[1] = 7.0; // stale values must be overwritten, not added to
+    SimParams params = contact_params(10.0, 2.0);
+    params.dt = 0.1;
+    compute_contact_bruteforce(p, params);
+    EXPECT_NEAR(p.heat_rate[0], 3.0, 1e-12);
+    EXPECT_NEAR(p.heat_rate[1], 3.0, 1e-12);
+    EXPECT_EQ(p.heat[0], 0.0); // contact sets the rate only; leapfrog_step adds heat
+
+    // Separating heats just the same (the damper resists both ways).
+    p.vx[0] = -1.0;
+    p.vx[1] = 1.0;
+    compute_contact_bruteforce(p, params);
+    EXPECT_NEAR(p.heat_rate[0], 3.0, 1e-12);
+
+    // Sideways motion: no normal speed, no heat. Apart: no contact, no heat.
+    p.vx[0] = p.vx[1] = 0.0;
+    p.vy[0] = 3.0;
+    compute_contact_bruteforce(p, params);
+    EXPECT_EQ(p.heat_rate[0], 0.0);
+    EXPECT_EQ(p.heat_rate[1], 0.0);
+    Particles apart = pair_on_x(0.0, 1.1, 0.5, 0.5, 2.0, 0.5);
+    apart.vx[0] = 1.0;
+    apart.heat_rate[0] = 7.0;
+    compute_contact_bruteforce(apart, params);
+    EXPECT_EQ(apart.heat_rate[0], 0.0);
+}
+
+TEST(Contact, NoContactMeansNoHeatRate) {
+    Particles p = pair_on_x(0.0, 0.9, 0.5, 0.5, 1.0, 1.0); // overlapping, approaching
+    p.vx[0] = 1.0;
+    p.heat_rate[0] = p.heat_rate[1] = 7.0;
+    SimParams params = contact_params(10.0, 2.0);
+    params.contact_enabled = false;
+    compute_accelerations(p, params, BACKEND_SERIAL);
+    EXPECT_EQ(p.heat_rate[0], 0.0);
+    EXPECT_EQ(p.heat_rate[1], 0.0);
+}
+
+TEST(Contact, ClusterHeatRateSumsEveryPairOnce) {
+    // The 27-particle squeezed grid from ClusterForcesCancelExactly. The particles'
+    // heating rates must add up to each pair's damper power counted once.
+    Particles p;
+    p.resize(27);
+    std::size_t idx = 0;
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            for (int cc = 0; cc < 3; ++cc) {
+                p.x[idx] = 0.9 * a + 0.01 * b;
+                p.y[idx] = 0.9 * b - 0.02 * cc;
+                p.z[idx] = 0.9 * cc + 0.03 * a;
+                p.vx[idx] = 0.1 * (a - b);
+                p.vy[idx] = 0.2 * (cc - 1);
+                p.vz[idx] = 0.05 * (a + b + cc);
+                p.radius[idx] = 0.5;
+                p.mass[idx] = 1.0 + 0.1 * static_cast<double>(idx);
+                ++idx;
+            }
+        }
+    }
+    SimParams params = contact_params(100.0, 2.0);
+    params.dt = 0.01;
+    double expected = 0.0;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        for (std::size_t j = i + 1; j < p.size(); ++j) {
+            double dx = p.x[i] - p.x[j], dy = p.y[i] - p.y[j], dz = p.z[i] - p.z[j];
+            double d = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (d >= 1.0) {
+                continue;
+            }
+            double vn =
+                ((p.vx[i] - p.vx[j]) * dx + (p.vy[i] - p.vy[j]) * dy + (p.vz[i] - p.vz[j]) * dz) /
+                d;
+            double m_eff = p.mass[i] * p.mass[j] / (p.mass[i] + p.mass[j]);
+            expected += 2.0 * vn * vn * (1.0 - 0.5 * 2.0 * 0.01 / m_eff);
+        }
+    }
+    ASSERT_GT(expected, 0.1); // the cluster really is moving in contact
+    Particles q = p;
+    compute_contact_bruteforce(p, params);
+    double sum = 0.0;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        sum += p.heat_rate[i];
+    }
+    EXPECT_NEAR(sum, expected, 1e-12 * expected);
+
+    // Through compute_accelerations with the OpenMP backend: contact is still the same
+    // serial loop on every backend, so this only checks that OpenMP gravity leaves
+    // heat_rate alone. It becomes a real check when contact gets an OpenMP version (#23).
+    compute_accelerations(q, params, BACKEND_OMP);
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        EXPECT_NEAR(q.heat_rate[i], p.heat_rate[i], 1e-12 * expected) << "particle " << i;
+    }
+}
+
+TEST(Contact, OnlyLeapfrogStepsAddHeat) {
+    Particles p = pair_on_x(-0.45, 0.45, 0.5, 0.5, 1.0, 1.0); // overlapping, approaching
+    p.vx[0] = 1.0;
+    p.vx[1] = -1.0;
+    SimParams params = contact_params(100.0, 3.0);
+    params.dt = 1e-3;
+    compute_accelerations(p, params, BACKEND_SERIAL);
+    compute_accelerations(p, params, BACKEND_SERIAL); // extra evaluations add nothing
+    EXPECT_EQ(total_heat(p), 0.0);
+    leapfrog_step(p, params, BACKEND_SERIAL);
+    // One step adds exactly the rate from the step's own force evaluation times dt.
+    ASSERT_GT(p.heat_rate[0], 0.0);
+    EXPECT_EQ(p.heat[0], p.heat_rate[0] * params.dt);
+    EXPECT_EQ(p.heat[1], p.heat_rate[1] * params.dt);
+}
+
 namespace {
 
 struct BounceResult {
     double energy_change; // (E_after - E_before) / KE_before, both while separated
+    double with_heat;     // the same, with the heat added to E_after
+    double heat0, heat1;  // each particle's heat at the end
     double vx0_after;     // particle 0's velocity after the bounce
     double momentum_after;
     double separation_after;
@@ -251,6 +372,9 @@ BounceResult head_on_bounce(double c) {
     }
     BounceResult res;
     res.energy_change = (total_energy(p, params) - e0) / ke0;
+    res.with_heat = (total_energy(p, params) + total_heat(p) - e0) / ke0;
+    res.heat0 = p.heat[0];
+    res.heat1 = p.heat[1];
     res.vx0_after = p.vx[0];
     Vec3 mom = total_momentum(p);
     res.momentum_after = std::fabs(mom.x) + std::fabs(mom.y) + std::fabs(mom.z);
@@ -269,6 +393,7 @@ TEST(Contact, HeadOnBounceKeepsEnergyWithoutDamping) {
     // error is only from the timestep. Measured 1.2e-5 at dt = 1e-4 (1.3e-6 at
     // dt = 5e-5), so this bound has ~8x margin; real energy loss would be ~0.1 or more.
     EXPECT_LT(std::fabs(res.energy_change), 1e-4);
+    EXPECT_EQ(res.heat0 + res.heat1, 0.0); // no damper, no heat
 }
 
 TEST(Contact, HeadOnBounceLosesEnergyWithDamping) {
@@ -289,4 +414,21 @@ TEST(Contact, HeadOnBounceLosesEnergyWithDamping) {
     const double ke_impact = ke0 + (1.0 / 1.0 - 1.0 / 1.2);
     const double expected = -(1.0 - e * e) * ke_impact / ke0;
     EXPECT_NEAR(res.energy_change, expected, 0.03);
+}
+
+TEST(Contact, HeatAccountsForTheEnergyTheDamperRemoves) {
+    // Kinetic + potential + heat after the bounce must match the start. Measured at
+    // dt = 1e-4: 1.0e-5 (e = 0.5), -2.5e-5 (e = 0.9) and 1.1e-5 (e = 0.1) of the
+    // starting kinetic energy, the same size as the undamped bounce's 1.2e-5, so the
+    // bound is the undamped test's. Without the leapfrog factor 1 - c dt / (2 m_eff)
+    // the heat was 2.7e-3 too high at e = 0.5 and 9.8e-3 at e = 0.1.
+    const double restitutions[] = {0.5, 0.9, 0.1};
+    for (double e : restitutions) {
+        SCOPED_TRACE(e);
+        const double zeta = -std::log(e) / std::sqrt(kPi * kPi + std::log(e) * std::log(e));
+        BounceResult res = head_on_bounce(2.0 * zeta * std::sqrt(0.5 * 1e4));
+        EXPECT_LT(res.energy_change, -0.2); // a real loss to account for
+        EXPECT_LT(std::fabs(res.with_heat), 1e-4);
+        EXPECT_EQ(res.heat0, res.heat1); // equal masses: the two halves match exactly
+    }
 }
