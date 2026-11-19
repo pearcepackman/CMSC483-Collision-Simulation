@@ -460,7 +460,7 @@ TEST(Sim, PlacePlanetShiftsAndAppends) {
     planet.mass[0] = planet.mass[1] = 2.0;
     planet.radius[0] = planet.radius[1] = 0.1;
     planet.body[0] = planet.body[1] = 3;
-    planet.heat[1] = 0.75;      // a planet that already heated up keeps its heat
+    planet.heat[1] = 0.75;     // a planet that already heated up keeps its heat
     planet.heat_rate[1] = 9.0; // the rate isn't copied: sim_init recomputes it
 
     Particles dst;

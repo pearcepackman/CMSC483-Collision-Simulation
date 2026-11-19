@@ -431,7 +431,7 @@ TEST(Sim, BuildPlanetsWarnsAboutTooStrongDamper) {
     // at dt = 0.002, c * dt / m_eff = 4c. Past 2 the explicit damper is unstable (each
     // step flips and grows the approach speed) and the heat it books goes negative.
     Config cfg = one_planet_config();
-    cfg.relax_max_steps = 0; // the note is about the settings, no need to run anything
+    cfg.relax_max_steps = 0;    // the note is about the settings, no need to run anything
     cfg.params.contact_c = 0.6; // 2.4
     Particles p;
     std::string err = build_stderr(cfg, &p);

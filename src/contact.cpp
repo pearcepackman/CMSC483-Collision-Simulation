@@ -43,9 +43,10 @@ void compute_contact_bruteforce(Particles &p, const SimParams &params) {
             // last, the next step's first), which shrink vn on average by the factor
             // (1 - c dt / (2 m_eff)). With it, the heat matches the kinetic energy the
             // damper removes: exactly for a damper acting alone over a contact that begins
-            // and ends apart, to about 1e-5 of the starting kinetic energy in the bounce tests, 1.3% short
-            // in the head-on collision (docs/notes.md). It is < 0 only past
-            // c dt / m_eff = 2, where the damper is unstable anyway (build_planets warns).
+            // and ends apart, to about 1e-5 of the starting kinetic energy in the bounce
+            // tests, and 1.3% short in the head-on collision (docs/notes.md). It is < 0
+            // only past c dt / m_eff = 2, where the damper is unstable anyway
+            // (build_planets warns).
             // This pair is visited once from each side, so each side takes half.
             double m_eff = p.mass[i] * p.mass[j] / (p.mass[i] + p.mass[j]);
             q += 0.5 * c * vn * vn * (1.0 - 0.5 * c * dt / m_eff);
