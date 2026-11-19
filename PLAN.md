@@ -101,7 +101,8 @@ planet-collision/
 │   ├── gravity_serial.cpp   ← reference implementation (never delete)
 │   ├── gravity_omp.cpp
 │   ├── gravity_hip.hip      ← only built with ENABLE_HIP
-│   ├── contact.cpp          ← contact forces (brute force, then uniform grid)
+│   ├── contact.cpp          ← contact forces (brute force reference, hashed-grid version)
+│   ├── grid.cpp             ← hashed uniform grid (cell list) for finding neighbors
 │   ├── forces.cpp           ← compute_accelerations: gravity, then contact
 │   ├── integrator.cpp       ← leapfrog
 │   ├── diagnostics.cpp      ← energy, momentum, angular momentum
@@ -123,6 +124,7 @@ planet-collision/
 │   └── bench.py             ← run benchmarks, make speedup graphs
 └── bench/
     ├── bench_gravity.cpp    ← times one gravity evaluation: serial vs OpenMP thread counts
+    ├── bench_contact.cpp    ← times one contact evaluation: all pairs vs grid
     └── results/             ← committed CSVs of benchmark runs
 ```
 

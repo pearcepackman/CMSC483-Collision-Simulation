@@ -45,6 +45,8 @@ jobs:
           ./build/dev/planet_sim --scenario cloud --n 500 --steps 20 --backend omp --bench
       - name: Run bench_gravity (smoke run, so the benchmark can't silently break)
         run: ./build/dev/bench_gravity 500 1
+      - name: Run bench_contact (smoke run; exits 1 if grid and all-pairs contact disagree)
+        run: ./build/dev/bench_contact 2000 1
       - name: Test (1 thread)
         run: ctest --preset dev
         env:

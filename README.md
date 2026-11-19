@@ -31,9 +31,9 @@ The GPU kernel is still the simple version. This card runs double precision abou
 | 0 | Repo, build system, CI | Done |
 | 1 | Serial two-body orbit (leapfrog, energy conservation) | Done: gravity, leapfrog, planet generation, frame output and a render script |
 | 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI, contact forces, scenario files, planet relaxation, first collision video, energy plot and contact heat done; conservation tests and CI smoke run left |
-| 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores |
+| 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores; grid contact done (33x faster than all pairs at 32k particles, one thread); benchmark harness and scheduling comparison left |
 | 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
-| 5 | Grid-based contact, impact scenarios, full benchmarks | Not started |
+| 5 | Grid-based contact, impact scenarios, full benchmarks | Not started (grid contact came early, in M3) |
 | V | Live viewer (`planet_view`) | In progress: 3D window with live serial/OpenMP/GPU switching done; glow look and replay/video export left |
 | 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
 
@@ -94,6 +94,12 @@ cmake --preset release && cmake --build --preset release
 OMP_PROC_BIND=close OMP_PLACES=cores ./build/release/bench_gravity 10000
 ```
 
+Compare all-pairs contact with the grid (one thread, planets of 1k to 32k particles; exits 1 if the two disagree):
+
+```bash
+./build/release/bench_contact 32000
+```
+
 Run on the GPU (needs ROCm and a supported AMD GPU; setup in [docs/tooling.md](docs/tooling.md)):
 
 ```bash
@@ -143,7 +149,7 @@ tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
 scripts/    render.py (frames to video), plot_energy.py (energy plot) and their tests; benchmark scripts [coming]
 configs/    impact scenarios: head_on.cfg, smoke.cfg (CI); grazing and Theia-like [coming]
-bench/      micro-benchmarks (bench_gravity) and committed results
+bench/      micro-benchmarks (bench_gravity, bench_contact) and committed results
 ```
 
 ## How we know it's correct
@@ -162,4 +168,4 @@ Details: [docs/tooling.md](docs/tooling.md). Design decisions and benchmark find
 ## Team
 
 - Pearce Packman
-- Kyle ([@kpoudyal06](https://github.com/kpoudyal06))
+- Kyle Poudyal ([@kpoudyal06](https://github.com/kpoudyal06))
