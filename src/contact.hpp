@@ -10,6 +10,9 @@
 // and a_i += F_i / m_i. F_j = -F_i exactly. k = contact_k (force per unit overlap),
 // c = contact_c (force per unit approach speed). Two particles at exactly the same
 // position have no direction to push in and get no contact force.
+// It also sets (overwrites) heat_rate[i]: half the damper power c * vn^2 of each of i's
+// contacts, times 1 - c * dt / (2 m_eff) (see contact.cpp), so the two particles of a
+// pair heat up equally. leapfrog_step turns the rate into heat.
 // Every mass must be > 0: each particle's force is divided by its own mass, even when
 // it touches nothing (0 / 0 = NaN).
 // The force is not clamped: while a pair separates, the damper term can outweigh the

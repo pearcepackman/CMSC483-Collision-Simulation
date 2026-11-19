@@ -48,7 +48,9 @@ struct RelaxResult {
 // then give it its velocity and append it to the main Particles. Otherwise bulk
 // motion counts as kinetic energy and the planets pull on each other. Afterwards
 // ax/ay/az are stale (the drag ran after the last force evaluation), so the caller
-// must recompute accelerations before the main run (sim_init does).
+// must recompute accelerations before the main run (sim_init does). Heat from the
+// contact dampers during relaxation is set back to zero at the end (unless it stopped
+// on NaN/Inf), so the planet starts the run cold.
 RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend, double drag,
                          double ke_threshold, int max_steps);
 

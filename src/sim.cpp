@@ -23,15 +23,16 @@ std::size_t first_non_finite(const Particles &p) {
 }
 
 void write_energy_header(FILE *f) {
-    std::fprintf(f, "step,t,kinetic,potential,total,px,py,pz\n");
+    std::fprintf(f, "step,t,kinetic,potential,heat,total,px,py,pz\n");
 }
 
 void write_energy_row(FILE *f, int step, double t, const Particles &p, const SimParams &params) {
     double ke = kinetic_energy(p);
     double pe = potential_energy(p, params);
+    double heat = total_heat(p);
     Vec3 mom = total_momentum(p);
-    std::fprintf(f, "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n", step, t, ke, pe, ke + pe,
-                 mom.x, mom.y, mom.z);
+    std::fprintf(f, "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n", step, t, ke, pe, heat,
+                 ke + pe + heat, mom.x, mom.y, mom.z);
 }
 
 bool finish_log(FILE *f) {
@@ -107,10 +108,43 @@ void place_planet(Particles &dst, const Particles &planet, Vec3 center, Vec3 vel
         dst.mass[base + i] = planet.mass[i];
         dst.radius[base + i] = planet.radius[i];
         dst.body[base + i] = planet.body[i];
+        dst.heat[base + i] = planet.heat[i]; // heat_rate isn't copied: sim_init recomputes it
+    }
+}
+
+// Notes (not errors) when the contact damper is too strong for the lightest pair of
+// particles: past c * dt / m_eff = 2 the explicit damper makes each contact's approach
+// speed flip and grow every step instead of dying out, and the heat it books goes
+// negative. The run would blow up, so say why first.
+static void note_strong_damper(const Config &cfg) {
+    if (!cfg.params.contact_enabled || cfg.planets.empty()) {
+        return;
+    }
+    double m_min = 0.0;
+    for (const PlanetSpec &spec : cfg.planets) {
+        if (spec.n <= 0) {
+            continue; // make_planet rejects it; nothing to divide by here
+        }
+        double m = spec.mass / static_cast<double>(spec.n);
+        if (m_min == 0.0 || m < m_min) {
+            m_min = m;
+        }
+    }
+    if (!(m_min > 0.0)) {
+        return;
+    }
+    const double alpha = cfg.params.contact_c * cfg.params.dt / (0.5 * m_min);
+    if (alpha >= 2.0) {
+        std::fprintf(stderr,
+                     "note: contact_c = %g is too strong at dt = %g: two of the lightest "
+                     "particles (mass %g) have c * dt / m_eff = %.3g, which must stay below 2, "
+                     "or contacts bounce harder every step and blow up; lower contact_c or dt\n",
+                     cfg.params.contact_c, cfg.params.dt, m_min, alpha);
     }
 }
 
 Particles build_planets(const Config &cfg, Backend backend) {
+    note_strong_damper(cfg);
     Particles all;
     for (const PlanetSpec &spec : cfg.planets) {
         PlanetSpec at_rest = spec; // generate and relax at the origin, not moving
