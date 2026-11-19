@@ -119,11 +119,63 @@ Particles build_planets(const Config &cfg, Backend backend) {
         Particles planet;
         make_planet(planet, at_rest);
         if (cfg.relax_max_steps > 0) {
-            relax_planet(planet, cfg.params, backend, cfg.relax_ke_threshold, cfg.relax_max_steps);
+            RelaxResult r = relax_planet(planet, cfg.params, backend, cfg.relax_drag,
+                                         cfg.relax_ke_threshold, cfg.relax_max_steps);
+            // Notes, not errors: the run goes on (sim_init then stops a NaN/Inf start).
+            if (!r.finite) {
+                std::fprintf(stderr,
+                             "planet%d became NaN/Inf during relaxation, after %d steps "
+                             "(dt too large?)\n",
+                             spec.body, r.steps);
+            } else if (!r.settled) {
+                std::fprintf(stderr,
+                             "note: planet%d didn't settle in %d relax steps: kinetic energy "
+                             "%.3g must stay below relax_ke_threshold = %.3g for %d steps in "
+                             "a row (one dynamical time; a smaller dt needs more steps); "
+                             "raise relax_max_steps\n",
+                             spec.body, r.steps, kinetic_energy(planet), cfg.relax_ke_threshold,
+                             r.hold);
+            }
+            if (r.finite && cfg.relax_drag * r.t_dyn > MAX_RELAX_DRAG_T_DYN) {
+                std::fprintf(stderr,
+                             "note: relax_drag = %g is too strong for planet%d (drag x "
+                             "dynamical time = %.0f, above %.0f): the planet only creeps, so "
+                             "it can look settled when it isn't; lower relax_drag\n",
+                             cfg.relax_drag, spec.body, cfg.relax_drag * r.t_dyn,
+                             MAX_RELAX_DRAG_T_DYN);
+            }
         }
         place_planet(all, planet, spec.center, spec.velocity);
     }
     return all;
+}
+
+bool setup_run(const CliOptions &cli, Backend backend, bool require_steps, Particles *p,
+               SimParams *params, int *steps, int *output_every, std::string *error) {
+    Config cfg;
+    const bool from_config = !cli.config_path.empty();
+    if (from_config) {
+        if (!load_config(cli.config_path.c_str(), cfg)) {
+            *error = "couldn't load config '" + cli.config_path + "'";
+            return false;
+        }
+        *params = cfg.params;
+        *steps = cfg.steps;
+        *output_every = cfg.output_every;
+    } else if (!build_scenario(cli.scenario.c_str(), cli.n, cli.seed, *p, *params)) {
+        *error = "unknown scenario '" + cli.scenario + "' (orbit, figure8, cloud)";
+        return false;
+    }
+    if (!apply_overrides(cli, from_config && require_steps, params, steps, output_every, error)) {
+        return false;
+    }
+    // Planets last: relaxation steps them, so it must use the checked, overridden dt
+    // (a --dt applies to it too).
+    if (from_config) {
+        cfg.params = *params;
+        *p = build_planets(cfg, backend);
+    }
+    return true;
 }
 
 bool build_scenario(const char *name, int n, std::uint64_t seed, Particles &p, SimParams &params) {

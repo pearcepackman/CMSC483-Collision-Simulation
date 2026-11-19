@@ -76,19 +76,8 @@ bool setup(Viewer &v, std::string *error) {
     Particles p;
     SimParams params;
     int steps = 1, output_every = 1; // planet_sim-only settings, unused here
-    if (!v.cli.config_path.empty()) {
-        Config cfg;
-        if (!load_config(v.cli.config_path.c_str(), cfg)) {
-            *error = "couldn't load config '" + v.cli.config_path + "'";
-            return false;
-        }
-        params = cfg.params;
-        p = build_planets(cfg, v.backend);
-    } else if (!build_scenario(v.cli.scenario.c_str(), v.cli.n, v.cli.seed, p, params)) {
-        *error = "unknown scenario '" + v.cli.scenario + "' (orbit, figure8, cloud)";
-        return false;
-    }
-    if (!apply_overrides(v.cli, false, &params, &steps, &output_every, error)) {
+    // The same setup planet_sim uses (tested there): overrides, then planets.
+    if (!setup_run(v.cli, v.backend, false, &p, &params, &steps, &output_every, error)) {
         return false;
     }
     v.p = std::move(p);

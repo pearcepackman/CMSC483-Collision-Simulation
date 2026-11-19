@@ -20,33 +20,6 @@ int run(const CliOptions &cli) {
     int steps = 1000;
     int output_every = 10;
     const bool from_config = !cli.config_path.empty();
-    if (from_config) {
-        Config cfg;
-        if (!load_config(cli.config_path.c_str(), cfg)) {
-            std::fprintf(stderr, "planet_sim: couldn't load config '%s'\n",
-                         cli.config_path.c_str());
-            return 1;
-        }
-        params = cfg.params;
-        steps = cfg.steps;
-        output_every = cfg.output_every;
-        p = build_planets(cfg, cli.backend);
-    } else if (!build_scenario(cli.scenario.c_str(), cli.n, cli.seed, p, params)) {
-        std::fprintf(stderr, "planet_sim: unknown scenario '%s' (orbit, figure8, cloud)\n%s",
-                     cli.scenario.c_str(), cli_usage());
-        return 1;
-    }
-    if ((cli.has_n || cli.has_seed) && (from_config || cli.scenario != "cloud")) {
-        std::fprintf(stderr, "planet_sim: note: --n and --seed only apply to --scenario "
-                             "cloud; ignoring them\n");
-    }
-
-    // Command-line flags override the config / scenario defaults.
-    std::string error;
-    if (!apply_overrides(cli, from_config, &params, &steps, &output_every, &error)) {
-        std::fprintf(stderr, "planet_sim: %s\n", error.c_str());
-        return 1;
-    }
 
 #ifdef SIM_HAVE_HIP
     // Pick the GPU up front, so "no GPU" is a clean error instead of an abort mid-run.
@@ -60,6 +33,20 @@ int run(const CliOptions &cli) {
         std::fprintf(stderr, "planet_sim: hip device: %s\n", info.c_str());
     }
 #endif
+
+    // After the GPU check, because relaxing a config's planets runs on the backend.
+    std::string error;
+    if (!setup_run(cli, cli.backend, true, &p, &params, &steps, &output_every, &error)) {
+        std::fprintf(stderr, "planet_sim: %s\n", error.c_str());
+        if (!from_config && error.compare(0, 16, "unknown scenario") == 0) {
+            std::fputs(cli_usage(), stderr);
+        }
+        return 1;
+    }
+    if ((cli.has_n || cli.has_seed) && (from_config || cli.scenario != "cloud")) {
+        std::fprintf(stderr, "planet_sim: note: --n and --seed only apply to --scenario "
+                             "cloud; ignoring them\n");
+    }
 
     RunOptions opts;
     opts.backend = cli.backend;

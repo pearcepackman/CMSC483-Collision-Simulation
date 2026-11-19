@@ -1,13 +1,16 @@
 #include "init.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
 #include <vector>
 
-#include "util.hpp"
+#include "diagnostics.hpp"
+#include "forces.hpp"
+#include "integrator.hpp"
 
 // Each particle is nudged by at most this fraction of its radius, so the lattice
 // isn't perfectly regular. Small enough that neighbors can't overlap much.
@@ -219,7 +222,79 @@ void make_planet(Particles &p, const PlanetSpec &spec) {
     }
 }
 
-// Stub until #15.
-int relax_planet(Particles &, const SimParams &, Backend, double, int) {
-    not_implemented("relax_planet");
+// The dynamical time sqrt(R^3 / (G M)) of the planet in p (G = 1), with R the farthest
+// particle center from the center of mass. Roughly the time a particle takes to cross
+// the planet under its gravity, so the planet's sag-and-rebound oscillation fits inside
+// it. 0 for an empty or massless p, or a single particle.
+static double dynamical_time(const Particles &p) {
+    double m = 0.0, cx = 0.0, cy = 0.0, cz = 0.0;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        m += p.mass[i];
+        cx += p.mass[i] * p.x[i];
+        cy += p.mass[i] * p.y[i];
+        cz += p.mass[i] * p.z[i];
+    }
+    if (!(m > 0.0)) {
+        return 0.0;
+    }
+    cx /= m;
+    cy /= m;
+    cz /= m;
+    double r2 = 0.0;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        double dx = p.x[i] - cx, dy = p.y[i] - cy, dz = p.z[i] - cz;
+        r2 = std::max(r2, dx * dx + dy * dy + dz * dz);
+    }
+    return std::sqrt(r2 * std::sqrt(r2) / m);
+}
+
+// Steps that make up t_dyn, at least 1. Clamped in double before the cast: a tiny dt or
+// a huge planet would overflow int (undefined behavior; on x86 it gave INT_MIN, so a
+// hold of 1 and an unrelaxed planet reported as settled).
+static int steps_for(double t_dyn, double dt) {
+    if (!(dt > 0.0)) {
+        return 1;
+    }
+    double s = std::ceil(t_dyn / dt);
+    if (!(s < static_cast<double>(INT_MAX))) {
+        return INT_MAX;
+    }
+    return std::max(1, static_cast<int>(s));
+}
+
+RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend, double drag,
+                         double ke_threshold, int max_steps) {
+    RelaxResult r;
+    // One factor for every step: each velocity loses this fraction of itself, the same
+    // as a drag force -drag * m * v over one step.
+    const double keep = std::exp(-drag * params.dt);
+    // Settled means below the threshold for a whole dynamical time, not just once: the
+    // planet sags and rebounds, and kinetic energy passes near zero at every turning
+    // point (a 2,000-particle planet dipped to 3e-4 at step 150, then rose to 1.1e-3).
+    // This also covers the start, where a planet at rest has zero kinetic energy.
+    r.t_dyn = dynamical_time(p);
+    r.hold = steps_for(r.t_dyn, params.dt);
+    compute_accelerations(p, params, backend); // leapfrog needs a(t) before the first step
+    int calm = 0;                              // consecutive steps that ended below the threshold
+    while (r.steps < max_steps && calm < r.hold) {
+        leapfrog_step(p, params, backend);
+        // The drag changes velocities after the step's forces were computed, so the
+        // contact damper term in ax/ay/az is from the pre-drag velocities. That is a
+        // small error in a phase whose only job is to settle the planet, and fixing it
+        // would mean a second force evaluation per step.
+        for (std::size_t i = 0; i < p.size(); ++i) {
+            p.vx[i] *= keep;
+            p.vy[i] *= keep;
+            p.vz[i] *= keep;
+        }
+        ++r.steps;
+        double ke = kinetic_energy(p);
+        if (!std::isfinite(ke)) {
+            r.finite = false; // blew up (dt far too large?): more steps won't help
+            return r;
+        }
+        calm = ke < ke_threshold ? calm + 1 : 0;
+    }
+    r.settled = calm >= r.hold;
+    return r;
 }

@@ -111,14 +111,25 @@ add_cli_test(Cli.OutWritesFinalStepFrame 0
 
 # --config: the CI smoke config loads, builds both planets and runs (#13). A bad config
 # is a setup error (exit 1) that names the file, line and key.
-# The particle count catches a planet silently dropped. head_on.cfg sits at ~94% of
-# make_planet's particle_radius limit, so it is built here too, not just parsed.
+# The particle count catches a planet silently dropped. smoke.cfg relaxes its planets
+# (#15), so this also runs relax_planet end to end. head_on.cfg isn't run here: relaxing
+# its 4,000 particles takes about a minute; Config.ShippedConfigsLoad checks its planets
+# with planet_spec_ok instead.
 add_cli_test(Cli.SmokeConfigRuns 0
     ARGS --config ${PROJECT_SOURCE_DIR}/configs/smoke.cfg --steps 2
     OUTPUT "ran 2 steps of 500 particles")
-add_cli_test(Cli.HeadOnConfigRuns 0
-    ARGS --config ${PROJECT_SOURCE_DIR}/configs/head_on.cfg --steps 1
-    OUTPUT "ran 1 steps of 4000 particles")
+# Command-line overrides reach relaxation (#15): planets are built after --dt is applied.
+# A dt of 1e300 makes relaxation itself blow up: it says so, and the starting state is
+# already NaN/Inf ("after step 0"). If relaxation used the config's dt instead, the
+# planets would be fine until the first real step ("after step 1").
+# Sim.SetupRunAppliesOverridesBeforeRelaxing covers the same order for planet_view.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/relax_dt.cfg
+    "output_every = 1\nsteps = 3\ndt = 0.002\nsoftening = 0.05\ncontact = true\n"
+    "contact_k = 20\nrelax_drag = 5\nrelax_ke_threshold = 1e-6\nrelax_max_steps = 5\n"
+    "planet0.n = 10\nplanet0.radius = 0.5\nplanet0.particle_radius = 0.06\nplanet0.mass = 0.01\n")
+add_cli_test(Cli.DtOverrideReachesRelaxation 2
+    ARGS --config ${CMAKE_CURRENT_BINARY_DIR}/relax_dt.cfg --dt 1e300
+    OUTPUT "planet0 became NaN/Inf during relaxation, after 1 steps.*became NaN/Inf after step 0")
 # A value make_planet can't build is a clean setup error naming the planet, not an abort.
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bad_planet.cfg
     "output_every = 1\nsteps = 1\ndt = 0.01\nplanet0.n = 2000\nplanet0.radius = 1\n"

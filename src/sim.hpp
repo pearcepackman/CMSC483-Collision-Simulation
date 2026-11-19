@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
+#include "cli.hpp"
 #include "config.hpp"
 #include "gravity.hpp"
 #include "params.hpp"
@@ -60,9 +62,28 @@ bool finish_log(FILE *f);
 void place_planet(Particles &dst, const Particles &planet, Vec3 center, Vec3 velocity);
 
 // Builds the starting particles from a config: each planet is generated at rest at the
-// origin, relaxed if cfg.relax_max_steps > 0, then moved to its center and given its
-// velocity. (Relaxing a moving planet, or two planets together, gives wrong results.)
+// origin, relaxed with cfg.params if cfg.relax_max_steps > 0, then moved to its center
+// and given its velocity. (Relaxing a moving planet, or two planets together, gives
+// wrong results.) cfg.params.dt must already be valid: apply command-line overrides
+// before calling this (setup_run does). Notes on stderr, after which the run goes on: a
+// planet that doesn't settle within relax_max_steps, one that became NaN/Inf while
+// relaxing (sim_init then refuses to start), or a relax_drag so strong for the planet
+// (drag x dynamical time > MAX_RELAX_DRAG_T_DYN) that "settled" can't be trusted.
+// ax/ay/az of the result are not valid (sim_init).
 Particles build_planets(const Config &cfg, Backend backend);
+
+// The starting state of a run, shared by planet_sim and planet_view so both build it
+// the same way: either a config file (loaded, then the command-line overrides applied,
+// then its planets built and relaxed on `backend` with those final params, so --dt
+// reaches relaxation) or a built-in scenario (built, then the overrides applied).
+// *steps and *output_every come in holding the scenario defaults and go out with the
+// config's values and the overrides. require_steps: a config must set steps unless
+// --steps is given (planet_sim; the viewer runs until closed). Returns false and sets
+// *error if the config won't load, the scenario is unknown, or an override is bad. A
+// GPU backend must be initialized first (relaxation runs on it). ax/ay/az of *p are
+// not valid yet: call sim_init.
+bool setup_run(const CliOptions &cli, Backend backend, bool require_steps, Particles *p,
+               SimParams *params, int *steps, int *output_every, std::string *error);
 
 // Built-in gravity-only setups that need no config file, with their own default params:
 //   "orbit"   two equal masses in a circular orbit (period 2*pi)

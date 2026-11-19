@@ -143,6 +143,8 @@ KeyResult set_run_key(const std::string &key, const std::string &val, Config *cf
         ok = parse_double(val, &cfg->relax_ke_threshold);
     } else if (key == "relax_max_steps") {
         ok = parse_int(val, &cfg->relax_max_steps);
+    } else if (key == "relax_drag") {
+        ok = parse_double(val, &cfg->relax_drag);
     } else {
         return KEY_UNKNOWN;
     }
@@ -232,8 +234,13 @@ const char *run_settings_error(const Config &c) {
     if (sp.contact_c < 0.0) {
         return "contact_c must be >= 0 (a negative damper adds energy)";
     }
-    if (c.relax_ke_threshold < 0.0 || c.relax_max_steps < 0) {
-        return "relax_ke_threshold and relax_max_steps must be >= 0";
+    if (c.relax_ke_threshold < 0.0 || c.relax_max_steps < 0 || c.relax_drag < 0.0) {
+        return "relax_ke_threshold, relax_max_steps and relax_drag must be >= 0";
+    }
+    // Kinetic energy is never below 0, so relaxation would always use every step.
+    if (c.relax_max_steps > 0 && !(c.relax_ke_threshold > 0.0)) {
+        return "relaxation is on (relax_max_steps > 0) but relax_ke_threshold is 0, so it "
+               "could never settle; set relax_ke_threshold > 0";
     }
     return nullptr;
 }
