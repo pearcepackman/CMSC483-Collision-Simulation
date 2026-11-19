@@ -109,3 +109,11 @@ There are two files. `head_on.cfg` has two planets of 2,000 particles, for the f
 The smoke run is a small example of when threads don't pay off. Its 200 steps take 0.18 s serial, 0.10 to 0.12 s with OpenMP on 4 threads, and 1.06 to 1.25 s on all 22 threads, about 6x slower than serial. With 500 particles, each of 22 threads gets about 23 particles per step, so starting and joining the threads every step costs more than the work they split. Only gravity is parallel so far, and contact still runs serially.
 
 Running them showed a gap in the energy log. In the first 300 steps of the head-on run, kinetic plus gravitational energy rose twice, by 0.065 and 0.026. Adding the energy stored in compressed contact springs, computed from the frames, removes both rises: that total only falls, from -5.366 to -5.498. The planets aren't relaxed yet (#15), so they sag under their own gravity and spring back, and `energy.csv` doesn't count spring energy yet.
+
+## Nov 18: Planet relaxation (#15)
+
+Before the impact, each planet now settles on its own into a stable ball. The planet takes normal steps with every velocity slowed a little after each one, like moving through syrup, until it has stayed nearly still for about the time a particle needs to cross it. Stopping at the first quiet moment doesn't work: a fresh planet sags under its own gravity and bounces back, and it is briefly still at the bottom of every bounce.
+
+The two head-on planets settle in about 866 steps each and shrink by 3%. This fixes the energy rises found with the scenario files. In the first 300 steps of the head-on run, kinetic plus gravitational energy used to jump by 0.065 and 0.026 as the unrelaxed planets bounced. Now the largest rise is 2e-6.
+
+Relaxation is the same O(N²) force loop as the main run, so it costs real time: about a minute (53 s and 61 s in two runs) for the two 2,000-particle planets on 22 threads. On the small smoke planets, 22 threads are again much slower than serial, because each thread gets only about 11 particles.

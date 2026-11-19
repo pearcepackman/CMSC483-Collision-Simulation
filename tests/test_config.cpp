@@ -75,6 +75,7 @@ TEST(Config, SampleFileLoadsEveryKey) {
                        "output_every = 25\n"
                        "relax_ke_threshold = 1e-4\n"
                        "relax_max_steps = 1500\n"
+                       "relax_drag = 5\n"
                        "planet0.n = 2000\n"
                        "planet0.radius = 1.0\n"
                        "planet0.particle_radius = 0.065\n"
@@ -100,6 +101,7 @@ TEST(Config, SampleFileLoadsEveryKey) {
     EXPECT_EQ(cfg.output_every, 25);
     EXPECT_EQ(cfg.relax_ke_threshold, 1e-4);
     EXPECT_EQ(cfg.relax_max_steps, 1500);
+    EXPECT_EQ(cfg.relax_drag, 5.0);
 
     ASSERT_EQ(cfg.planets.size(), 2u);
     const PlanetSpec &a = cfg.planets[0];
@@ -132,6 +134,7 @@ TEST(Config, MissingKeysKeepValuesAlreadyInCfg) {
     cfg.params.contact_k = 3.0;
     cfg.steps = 42;
     cfg.relax_max_steps = 9;
+    cfg.relax_ke_threshold = 1e-3; // relaxation on needs a threshold > 0
     bool ok = false;
     std::string err = load_text(kMinimal, cfg, &ok);
     ASSERT_TRUE(ok) << err;
@@ -140,6 +143,7 @@ TEST(Config, MissingKeysKeepValuesAlreadyInCfg) {
     EXPECT_FALSE(cfg.params.contact_enabled);
     EXPECT_EQ(cfg.steps, 42);
     EXPECT_EQ(cfg.relax_max_steps, 9);
+    EXPECT_EQ(cfg.relax_ke_threshold, 1e-3);
     EXPECT_EQ(cfg.output_every, 10);
     ASSERT_EQ(cfg.planets.size(), 1u);
 }
@@ -299,8 +303,16 @@ TEST(Config, BadRunSettingsFail) {
     expect_rejected(m + "contact = true\n", "contact = true needs contact_k > 0");
     expect_rejected(m + "contact = true\ncontact_k = -20\n", "contact = true needs contact_k > 0");
     expect_rejected(m + "contact_c = -0.05\n", "contact_c must be >= 0");
-    expect_rejected(m + "relax_max_steps = -3\n", "relax_ke_threshold and relax_max_steps");
-    expect_rejected(m + "relax_ke_threshold = -1\n", "relax_ke_threshold and relax_max_steps");
+    // Kinetic energy is never below 0, so a 0 threshold could never be met.
+    expect_rejected(m + "relax_max_steps = 100\n",
+                    "relax_ke_threshold is 0, so it could never settle");
+    expect_rejected(m + "relax_max_steps = 100\nrelax_ke_threshold = 0\n",
+                    "relax_ke_threshold is 0, so it could never settle");
+    expect_rejected(m + "relax_max_steps = -3\n",
+                    "relax_ke_threshold, relax_max_steps and relax_drag");
+    expect_rejected(m + "relax_ke_threshold = -1\n",
+                    "relax_ke_threshold, relax_max_steps and relax_drag");
+    expect_rejected(m + "relax_drag = -5\n", "relax_ke_threshold, relax_max_steps and relax_drag");
     // contact_k only matters with contact on, and 0 is fine for the others.
     Config cfg;
     bool ok = false;
