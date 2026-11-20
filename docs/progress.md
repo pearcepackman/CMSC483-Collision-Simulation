@@ -8,7 +8,7 @@ Hardware for every number below: AMD Ryzen 5 7600X (6 cores, 12 threads), AMD Ra
 
 Two planets made of particles collide. The same O(N²) gravity runs on three backends (serial, OpenMP, HIP on the GPU), and the live viewer lets you switch between them mid-collision. Before building the viewer we picked its look with a quick browser prototype running a JavaScript port of the same physics.
 
-Still to do: the contact grid (#23), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
+Still to do: contact on threads (#27), faster GPU kernels (#32 float, #26 tiling, #30 keeping data on the GPU), the glow look (#47), polished videos from the viewer (#49) and the full scaling plots (#34).
 
 ## Oct 22: Build, CI and test setup (#1, #39, #40)
 
@@ -145,3 +145,15 @@ The same head-on run as above, now with heat. The motion is exactly the same; on
 Getting the heat right took one correction. The damper's strength is computed from the velocities halfway through a step, but by the time it has acted, those velocities have already shrunk. Booking the plain `c·vn²·dt` counted about 10% too much heat at the head-on settings. Multiplying by `1 − c·dt/(2·m_eff)` fixes that: in a two-particle bounce, kinetic + potential + heat afterwards matches the start to 1e-5 of the starting kinetic energy, against 2.7e-3 without it. In the head-on run, heat accounts for 98.7% of the energy the dampers removed.
 
 For the parallel versions of contact (#23, #27), each particle's heating rate is written only by the loop iteration that handles that particle, so threads can split the particles without ever writing to the same memory, the same way as for the forces.
+
+## Nov 19: Grid contact (#23)
+
+Contact used to check every pair of particles, so its cost grew with N²: doubling the particles made it 4 times slower. But particles only touch their close neighbors. Now space is cut into small cubes, each about one particle across, and every particle only checks the particles in its own cube and the 26 around it. That makes contact grow with N instead.
+
+Timed on one thread, on planets where every particle touches its neighbors, the grid is 2 times faster at 1,000 particles and 33 times faster at 32,000 (0.072 s instead of 2.38 s per contact step). The two versions give the same forces to about 4e-16:
+
+![Contact: all pairs vs grid](figures/fig_contact_grid.png)
+
+This also matters for parallel computing. Before, gravity ran on all threads but contact checked every pair on one thread, and Amdahl's law says the part that stays serial ends up setting the speed. The grid shrinks that serial part from O(N²) to O(N). The next step (#27) splits it across threads too. Each particle still adds up its own forces from all its neighbors, so threads can share out the particles without ever writing to the same memory. The grid version does have two limits we found in review: one much larger particle makes every cube large and slow (#62), and particles aren't stored in cube order, so the cost per particle creeps up from 1.4 to 2.2 µs as the arrays outgrow the cache.
+
+We'll measure the full head-on run before and after with the benchmark harness (#20).

@@ -94,7 +94,7 @@ Runs on every push and PR. GitHub's hosted runners have **no GPU**, so HIP is co
 | Job | What it does | Catches |
 |---|---|---|
 | `format` | `clang-format --dry-run --Werror` (pinned version) | Unformatted code |
-| `build-test` | Matrix of gcc and clang: build with `-Werror`, then `ctest -LE gpu` with `OMP_NUM_THREADS=1` **and** `4` | Compile errors, test failures, races that only show up with several threads |
+| `build-test` | Matrix of gcc and clang: build with `-Werror`, short `planet_sim` runs, smoke runs of `bench_gravity` and `bench_contact` (which exits 1 if grid and all-pairs contact disagree), then `ctest -LE gpu` with `OMP_NUM_THREADS=1` **and** `4` | Compile errors, test failures, races that only show up with several threads |
 | `asan` | clang Debug + ASan + UBSan, full test suite | Out-of-bounds writes, use-after-free, signed overflow, misaligned access |
 | `tsan` | clang + libomp + Archer (found with `find /usr/lib -name 'libarcher.so*'`, loaded via `OMP_TOOL_LIBRARIES`), `tsan` preset at 4 threads | Data races in OpenMP loops. **Blocking** (#21). It first runs a **canary**, [.github/ci/tsan_canary.cpp](../.github/ci/tsan_canary.cpp), a deliberately racy loop; if TSan doesn't report it, the job fails, so a broken race checker can't pass silently. Locally: `OMP_TOOL_LIBRARIES=$(find /usr/lib -name 'libarcher.so*' \| head -n 1) ctest --preset tsan`. |
 | `tidy` | clang-tidy on changed files | Missing `default(none)`, common bug patterns |

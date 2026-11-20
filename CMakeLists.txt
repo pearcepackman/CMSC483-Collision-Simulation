@@ -80,6 +80,11 @@ add_executable(bench_gravity bench/bench_gravity.cpp)
 target_link_libraries(bench_gravity PRIVATE sim_core)
 set_project_warnings(bench_gravity)
 
+# Micro-benchmark for contact, all pairs vs the grid (#23). Same rules as bench_gravity.
+add_executable(bench_contact bench/bench_contact.cpp)
+target_link_libraries(bench_contact PRIVATE sim_core)
+set_project_warnings(bench_contact)
+
 # Live 3D viewer (#45). raylib is pinned to a release tag and built from source, so
 # every machine gets the same version; SYSTEM keeps our warnings off its headers.
 if(ENABLE_VIEWER)
