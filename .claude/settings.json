@@ -1,18 +1,11 @@
 {
   "permissions": {
     "ask": [
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git push *)",
-      "Bash(git pull *)",
       "Bash(git merge *)",
       "Bash(git rebase *)",
       "Bash(git reset *)",
       "Bash(git revert *)",
       "Bash(git cherry-pick *)",
-      "Bash(git branch *)",
-      "Bash(git checkout *)",
-      "Bash(git switch *)",
       "Bash(git restore *)",
       "Bash(git stash *)",
       "Bash(git tag *)",
@@ -21,7 +14,6 @@
       "Bash(git mv *)",
       "Bash(git remote *)",
       "Bash(git worktree *)",
-      "Bash(gh pr create *)",
       "Bash(gh pr merge *)",
       "Bash(gh pr close *)",
       "Bash(gh pr reopen *)",
@@ -30,7 +22,12 @@
       "Bash(gh pr checkout *)",
       "Bash(gh release *)",
       "Bash(gh repo *)",
-      "EnterWorktree"
+      "EnterWorktree",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push origin main*)",
+      "Bash(git branch -D *)",
+      "Bash(git branch -d *)"
     ]
   }
 }
