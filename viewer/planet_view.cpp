@@ -30,13 +30,14 @@ namespace {
 const char *viewer_usage() {
     return "usage: planet_view (--config <file> | --scenario orbit|figure8|cloud [--n N] "
            "[--seed S])\n"
-           "                   [--backend serial|omp|hip] [--dt h] [--frames N]\n"
+           "                   [--backend serial|omp|hip] [--gpu-precision float|double]\n"
+           "                   [--dt h] [--frames N]\n"
            "                   [--screenshot <file.png>] [--help]\n"
            "  --frames      quit after N frames (for scripted runs and CI); default: run "
            "until closed\n"
            "  --screenshot  save the last frame as a PNG when the viewer exits\n"
-           "keys: 1/2/3 serial/OpenMP/HIP, space pause, r restart, [ ] step time budget,\n"
-           "      drag to orbit, mouse wheel to zoom\n"
+           "keys: 1/2/3 serial/OpenMP/HIP, p GPU float/double, space pause, r restart,\n"
+           "      [ ] step time budget, drag to orbit, mouse wheel to zoom\n"
            "exit codes: 0 ok, 1 usage or setup error, 2 the simulation produced NaN/Inf\n";
 }
 
@@ -137,6 +138,14 @@ void handle_input(Viewer &v) {
     if (IsKeyPressed(KEY_THREE)) {
         switch_backend(v, BACKEND_HIP);
     }
+#ifdef SIM_HAVE_HIP
+    if (IsKeyPressed(KEY_P)) { // GPU precision, live: the float-vs-double trade-off on screen
+        hip_set_double(!hip_uses_double());
+        v.ms_per_step = 0.0;
+        v.frame_ms = 0.0;
+        show_notice(v, std::string("GPU precision: ") + (hip_uses_double() ? "double" : "float"));
+    }
+#endif
     if (IsKeyPressed(KEY_SPACE) && !v.blew_up) {
         v.paused = !v.paused;
     }
@@ -224,7 +233,13 @@ void draw_hud(const Viewer &v) {
     DrawRectangle(10, 10, 330, 178, Color{12, 14, 22, 200});
     int y = 18;
     const int line = 20;
-    DrawText(TextFormat("backend   %s", backend_name(v.backend)), 20, y, 20,
+    const char *precision = "double"; // the CPU backends always compute in double
+#ifdef SIM_HAVE_HIP
+    if (v.backend == BACKEND_HIP && !hip_uses_double()) {
+        precision = "float";
+    }
+#endif
+    DrawText(TextFormat("backend   %s (%s)", backend_name(v.backend), precision), 20, y, 20,
              Color{255, 160, 70, 255});
     y += line + 4;
     DrawText(TextFormat("particles %zu", v.p.size()), 20, y, 18, RAYWHITE);
@@ -252,8 +267,8 @@ void draw_hud(const Viewer &v) {
     if (omp_get_wtime() < v.notice_until) {
         DrawText(v.notice.c_str(), 20, GetScreenHeight() - 60, 20, Color{255, 200, 120, 255});
     }
-    DrawText("1/2/3 serial/omp/hip   space pause   r restart   [ ] budget   drag orbit   wheel "
-             "zoom",
+    DrawText("1/2/3 serial/omp/hip   p float/double   space pause   r restart   [ ] budget   "
+             "drag orbit   wheel zoom",
              20, GetScreenHeight() - 30, 16, GRAY);
 }
 
@@ -338,6 +353,9 @@ int run(int argc, char **argv) {
         return 1;
     }
     v.backend = v.cli.backend;
+#ifdef SIM_HAVE_HIP
+    hip_set_double(v.cli.gpu_double);
+#endif
 #ifdef SIM_HAVE_HIP
     if (v.backend == BACKEND_HIP) {
         std::string info;

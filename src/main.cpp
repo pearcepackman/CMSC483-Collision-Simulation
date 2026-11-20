@@ -14,6 +14,9 @@ namespace {
 // The run itself, separated from main() so an allocation failure for a huge --n can be
 // reported cleanly instead of crashing.
 int run(const CliOptions &cli) {
+#ifdef SIM_HAVE_HIP
+    hip_set_double(cli.gpu_double);
+#endif
     // Starting state and settings: from a config file, or a built-in scenario.
     Particles p;
     SimParams params;
@@ -93,10 +96,14 @@ int run(const CliOptions &cli) {
                         : opts.backend == BACKEND_SERIAL ? 1
                                                          : 0;
     if (cli.bench) {
-        // One line, easy for scripts/bench.py (#20) to parse.
+        // One line, easy for scripts/bench.py (#20) to parse. precision is the arithmetic
+        // the forces used: double on the CPU backends, float or double on the GPU.
         double per_step = steps > 0 ? result.seconds / steps : 0.0;
-        std::printf("bench backend=%s n=%zu threads=%d steps=%d seconds_per_step=%.6g\n",
-                    backend_name(opts.backend), p.size(), threads, steps, per_step);
+        const bool gpu_float = opts.backend == BACKEND_HIP && !cli.gpu_double;
+        std::printf("bench backend=%s n=%zu threads=%d steps=%d seconds_per_step=%.6g "
+                    "precision=%s\n",
+                    backend_name(opts.backend), p.size(), threads, steps, per_step,
+                    gpu_float ? "float" : "double");
     } else {
         std::printf("ran %d steps of %zu particles (%s, %d threads) in %.3f s\n", result.steps_done,
                     p.size(), backend_name(opts.backend), threads, result.seconds);

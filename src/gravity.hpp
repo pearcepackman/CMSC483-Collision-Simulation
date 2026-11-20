@@ -47,10 +47,23 @@ int pick_gpu(int count, const int *compute_units, const char *const *archs,
 // gets the device description, or the error. Safe to call more than once.
 bool hip_init(std::string *info);
 
-// All-pairs gravity on the GPU in double precision: same formula and summation order
-// as serial. Overwrites ax/ay/az. Copies positions and masses to the GPU and the
-// accelerations back on every call. Calls hip_init if needed; aborts on any HIP error.
+// GPU precision for the hip backend: float (the default, fast) or double (the reference,
+// matches serial to ~1e-12). A plain global setting, like the chosen device; tests set
+// and restore it. Relaxation (relax_planet) always uses double.
+void hip_set_double(bool use_double);
+bool hip_uses_double();
+
+// All-pairs gravity on the GPU, in the precision above, tiled through shared memory.
+// Same formula as serial; in double it also sums in the same order. Overwrites
+// ax/ay/az. Copies the particles to the GPU and the accelerations back on every call.
+// Calls hip_init if needed; aborts on any HIP error.
 void compute_gravity_hip(Particles &p, const SimParams &params);
+
+// The hip backend's whole force step in one kernel: gravity plus, when
+// params.contact_enabled, contact forces and heat_rate with compute_contact_bruteforce's
+// rules. Overwrites ax/ay/az and heat_rate (0 with contact off). compute_accelerations
+// uses this for BACKEND_HIP instead of gravity + CPU contact.
+void compute_forces_hip(Particles &p, const SimParams &params);
 
 // Frees the GPU buffers compute_gravity_hip keeps between calls.
 void hip_release();

@@ -22,9 +22,10 @@ struct CliOptions {
     bool has_dt = false;
     int output_every = 0;
     bool has_output_every = false;
-    std::string out_dir; // --out: folder for frames + energy.csv (empty = no output)
-    bool bench = false;  // --bench: time the step loop, write nothing
-    bool help = false;   // --help
+    std::string out_dir;     // --out: folder for frames + energy.csv (empty = no output)
+    bool bench = false;      // --bench: time the step loop, write nothing
+    bool gpu_double = false; // --gpu-precision double: the hip backend computes in double
+    bool help = false;       // --help
 };
 
 // Parses argv into opts. Returns false and sets *error on an unknown flag, a missing or
