@@ -146,6 +146,16 @@ Dates assume final presentation in early December. Adjust to the real due date.
 | 5 | by Nov 29 | **Grid contact + scenarios + benchmarks** | Head-on vs grazing impact videos; full scaling graphs |
 | 6 | Dec | **Stretch + presentation** | Barnes-Hut or Newton's-3rd-law/atomics comparison; slides done |
 
+**Re-plan (Nov 20).** M0 to M2 are done, and much of M3 to M5 landed early or in a different order, so the last three weeks are organized around what the project has to show instead:
+
+| Target | Milestone | Done when |
+|---|---|---|
+| by Nov 27 | **F1: Fast + measured** | GPU kernel in float with shared-memory tiles and contact inside the kernel (#26, #32, #66); contact parallel with OpenMP (#27); benchmark harness (#20) |
+| by Dec 6 | **F2: Showpiece** | Layered core/mantle planets (#50); Theia-style grazing impact (#33) colored by heat and material in the glow viewer (#47); Barnes-Hut tree gravity on the CPU with a scheduling study (#35, time-boxed to Dec 3); impact analysis: remnant, debris disk, escaping mass (#67); scaling and crossover plots (#34); hero video (#49 or a screen recording). Code freeze Dec 7 |
+| by Dec 10 | **F3: Presentation** | Slides, final README and demo video, Q&A rehearsal (#36, #37, #38) |
+
+Cut in the re-plan: keeping the whole step on the GPU (#30, replaced by #66), atomics vs pair-twice (#31), mixed particle sizes in the grid (#62), and the separate OpenMP scheduling issue (#22, now part of #35). We model planets as rubble piles (soft-sphere contact, as asteroid codes like pkdgrav do) rather than as molten rock with smoothed particle hydrodynamics (SPH), which would take weeks of new physics and add no parallel-computing content.
+
 ### Suggested split
 
 - **Partner A, engine:** integrator, gravity backends (OpenMP, HIP), performance work. Owns the GPU work, since the GPU is in Pearce's PC.
