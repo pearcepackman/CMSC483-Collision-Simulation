@@ -59,7 +59,7 @@ endfunction()
 
 add_cli_test(Cli.OrbitBench 0
     ARGS --scenario orbit --steps 1000 --bench
-    OUTPUT "bench backend=serial n=2 threads=1 steps=1000 seconds_per_step=")
+    OUTPUT "bench backend=serial n=2 threads=1 steps=1000 seconds_per_step=[^ ]+ precision=double\n")
 add_cli_test(Cli.CloudBenchOmp 0
     ARGS --scenario cloud --n 200 --steps 20 --backend omp --bench
     OUTPUT "bench backend=omp n=200 ")
@@ -87,7 +87,11 @@ else()
     # The whole program on the GPU: device chosen, bench line, exit 0. Needs a GPU.
     add_cli_test(Cli.HipBackendRuns 0
         ARGS --scenario cloud --n 300 --steps 3 --backend hip --bench
-        OUTPUT "bench backend=hip n=300 threads=0 .*hip device: ") # stdout, then stderr
+        OUTPUT "bench backend=hip n=300 threads=0 .* precision=float\n.*hip device: ") # stdout, then stderr
+    add_cli_test(Cli.HipBackendRunsInDouble 0
+        ARGS --scenario cloud --n 300 --steps 3 --backend hip --gpu-precision double --bench
+        OUTPUT " precision=double\n")
+    set_tests_properties(Cli.HipBackendRunsInDouble PROPERTIES LABELS gpu)
     set_tests_properties(Cli.HipBackendRuns PROPERTIES LABELS gpu)
 endif()
 add_cli_test(Cli.InfiniteDtIsUsageError 1
