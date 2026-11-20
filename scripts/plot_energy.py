@@ -1,18 +1,22 @@
 """Energy plot of a run: planet_sim's energy.csv -> PNG, plus a summary on stdout.
 
-    python scripts/plot_energy.py frames/run1/energy.csv -o energy.png [--title T] [--max-rise X]
+    python scripts/plot_energy.py frames/run1/energy.csv -o energy.png [--title T]
+                                  [--max-rise X] [--max-drift Y]
 
-Plots kinetic, potential, heat and total energy against time, and under it the change in
-total energy since the start, on its own scale, so small rises are visible. Prints the
-total change and the largest rise of the total between two rows. With --max-rise X,
-exits 3 if that rise is above X, so a script or CI job can fail a run whose energy went
-up by more than the timestep error. Exit codes: 0 ok, 1 bad input, 2 bad command line,
-3 rise above --max-rise. Needs scripts/requirements.txt (numpy, matplotlib).
+Plots kinetic, potential, contact, heat and total energy against time, and under it the
+change in total energy since the start, on its own scale, so small rises are visible.
+Prints the total change, the largest rise of the total between two rows, and the
+furthest the total moved from its starting value, up or down. With --max-rise X it exits
+3 if a rise between two rows is above X; with --max-drift Y it exits 3 if the total ever
+moves more than Y away from its start (which catches a slow climb made of small rises,
+and energy that goes missing, e.g. heat that isn't booked). That lets a script or CI
+job fail a run whose energy moved by more than the expected timestep error. Exit codes: 0 ok, 1 bad input, 2 bad command line, 3 a limit was exceeded. Needs
+scripts/requirements.txt (numpy, matplotlib).
 
-energy.csv's total is kinetic + gravitational + heat (the energy contact damping has
-turned into heat), so it should stay nearly flat, with small timestep-sized ups and
-downs. During an impact it dips and recovers: energy stored in compressed contact
-springs isn't counted yet (#59), and heat is booked half a step early.
+energy.csv's total is kinetic + gravitational + contact (energy held in compressed
+contact springs) + heat (the energy contact damping has turned into heat), so it should
+stay nearly flat. What's left is a small error that appears as contacts begin and
+shrinks roughly in proportion to dt (docs/notes.md, #59).
 """
 
 import argparse
@@ -22,15 +26,18 @@ import sys
 import numpy as np
 
 # What planet_sim's write_energy_header() writes (src/sim.cpp).
-HEADER = "step,t,kinetic,potential,heat,total,px,py,pz"
+HEADER = "step,t,kinetic,potential,contact,heat,total,px,py,pz"
 COLUMNS = HEADER.split(",")
-ENERGIES = ("kinetic", "potential", "heat", "total")
+ENERGIES = ("kinetic", "potential", "contact", "heat", "total")
+# The header before the contact column (#59). Logs with it get a "rerun" message.
+OLD_HEADER = "step,t,kinetic,potential,heat,total,px,py,pz"
 
-# Blue, orange, yellow and green, picked to stay distinguishable with the common kinds
-# of color blindness. Each keeps its color from before heat was added. The yellow and
-# green are under 3:1 contrast on white, so every line is also named by a text label at
-# its end, and the labels replace a legend.
-COLORS = {"kinetic": "#2a78d6", "potential": "#eb6834", "heat": "#eda100", "total": "#1baf7a"}
+# Blue, orange, purple, yellow and green, picked to stay distinguishable with the common
+# kinds of color blindness. Each keeps its color from before contact and heat were
+# added. The yellow and green are under 3:1 contrast on white, so every line is also
+# named by a text label at its end, and the labels replace a legend.
+COLORS = {"kinetic": "#2a78d6", "potential": "#eb6834", "contact": "#8a5cc7", "heat": "#eda100",
+          "total": "#1baf7a"}
 TEXT = "#0b0b0b"
 TEXT_SECONDARY = "#52514e"
 GRID = "#e4e3df"
@@ -42,6 +49,9 @@ def load_energy(path):
     with open(path, newline="") as f:
         header = f.readline().rstrip("\r\n")
         rows = f.read().splitlines()  # handles \n and \r\n
+    if header == OLD_HEADER:
+        raise ValueError(f"{path}: written by planet_sim before the contact column was added "
+                         f"(#59); rerun planet_sim to get a log this script can read")
     if header != HEADER:
         raise ValueError(f"{path}: expected header '{HEADER}', got '{header}'")
     if rows and rows[-1] == "":
@@ -65,9 +75,11 @@ def load_energy(path):
 
 
 def summarize(e):
-    """Total energy change over the run and the largest rise between two rows.
+    """Total energy change over the run, the largest rise between two rows, and the
+    furthest the total moved from its start.
     Returns a dict: e0, e1, change, max_rise (0 if the total never went up),
-    rise_step (the row where that rise ended, or None), finite (no NaN/Inf anywhere)."""
+    rise_step (the row where that rise ended, or None), max_drift (largest
+    |total - start|), finite (no NaN/Inf anywhere)."""
     total = e["total"]
     finite = bool(np.all(np.isfinite(np.column_stack([e[c] for c in COLUMNS]))))
     rises = np.diff(total)
@@ -75,8 +87,10 @@ def summarize(e):
     if len(rises) > 0 and finite and np.max(rises) > 0.0:
         k = int(np.argmax(rises))
         max_rise, rise_step = float(rises[k]), int(e["step"][k + 1])
+    max_drift = float(np.max(np.abs(total - total[0]))) if finite else 0.0
     return {"e0": float(total[0]), "e1": float(total[-1]), "change": float(total[-1] - total[0]),
-            "max_rise": max_rise, "rise_step": rise_step, "finite": finite}
+            "max_rise": max_rise, "rise_step": rise_step, "max_drift": max_drift,
+            "finite": finite}
 
 
 def spread(ys, gap):
@@ -117,8 +131,8 @@ def label_line_ends(ax, t_end, ends):
 
 
 def plot(e, out, title=None):
-    """Two stacked panels sharing the time axis: the three energies, then the change in
-    total energy since the start."""
+    """Two stacked panels sharing the time axis: the energies, then the change in total
+    energy since the start."""
     import matplotlib
 
     matplotlib.use("Agg")  # no window needed, so this runs over SSH and in CI
@@ -161,9 +175,12 @@ def main(argv):
     parser.add_argument("--title", help="plot title (default 'Energy')")
     parser.add_argument("--max-rise", type=float,
                         help="exit 3 if total energy rises by more than this between two rows")
+    parser.add_argument("--max-drift", type=float,
+                        help="exit 3 if total energy ever moves more than this from its start")
     args = parser.parse_args(argv)
-    if args.max_rise is not None and not (args.max_rise >= 0.0 and np.isfinite(args.max_rise)):
-        parser.error("--max-rise needs a finite number >= 0")  # exits 2
+    for flag, value in (("--max-rise", args.max_rise), ("--max-drift", args.max_drift)):
+        if value is not None and not (value >= 0.0 and np.isfinite(value)):
+            parser.error(f"{flag} needs a finite number >= 0")  # exits 2
     if not os.path.isdir(os.path.dirname(os.path.abspath(args.out))):
         print(f"plot_energy.py: the folder for '{args.out}' doesn't exist", file=sys.stderr)
         return 1
@@ -188,11 +205,17 @@ def main(argv):
         print("total energy never rose")
     else:
         print(f"largest rise of total energy: {s['max_rise']:.3g} (ending at step {s['rise_step']})")
+    print(f"furthest from the start: {s['max_drift']:.3g}")
+    code = 0
     if args.max_rise is not None and s["max_rise"] > args.max_rise:
         print(f"plot_energy.py: total energy rose by {s['max_rise']:.3g}, more than "
               f"--max-rise {args.max_rise:g}", file=sys.stderr)
-        return 3
-    return 0
+        code = 3
+    if args.max_drift is not None and s["max_drift"] > args.max_drift:
+        print(f"plot_energy.py: total energy moved {s['max_drift']:.3g} from its start, more than "
+              f"--max-drift {args.max_drift:g}", file=sys.stderr)
+        code = 3
+    return code
 
 
 if __name__ == "__main__":

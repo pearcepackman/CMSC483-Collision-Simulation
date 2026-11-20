@@ -353,19 +353,21 @@ TEST(Sim, EnergyLogHasOneRowPerOutputStep) {
     std::vector<std::string> lines = read_lines(log);
     std::fclose(log);
     ASSERT_EQ(lines.size(), 1u + 11u); // header + steps 0, 10, ..., 100
-    EXPECT_EQ(lines[0], "step,t,kinetic,potential,heat,total,px,py,pz\n");
+    EXPECT_EQ(lines[0], "step,t,kinetic,potential,contact,heat,total,px,py,pz\n");
 
     // Total energy (column 6) stays within the orbit test's bound of its start (-0.125).
     for (std::size_t row = 1; row < lines.size(); ++row) {
         int step = 0;
-        double t = 0, ke = 0, pe = 0, heat = -1, e = 0, px = 0, py = 0, pz = 0;
-        ASSERT_EQ(std::sscanf(lines[row].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step, &t,
-                              &ke, &pe, &heat, &e, &px, &py, &pz),
-                  9)
+        double t = 0, ke = 0, pe = 0, spring = -1, heat = -1, e = 0, px = 0, py = 0, pz = 0;
+        ASSERT_EQ(std::sscanf(lines[row].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step,
+                              &t, &ke, &pe, &spring, &heat, &e, &px, &py, &pz),
+                  10)
             << lines[row];
         EXPECT_EQ(step, static_cast<int>(row - 1) * 10);
         EXPECT_LE(std::fabs(t - step * params.dt), 1e-15 * (1.0 + std::fabs(t)));
-        EXPECT_EQ(heat, 0.0); // no contact in the orbit, so nothing heats up
+        EXPECT_EQ(spring, 0.0); // no contact in the orbit: no springs, nothing heats up
+        EXPECT_EQ(heat, 0.0);
+        EXPECT_EQ(e, ((ke + pe) + spring) + heat); // %.17g round-trips; same order as C++
         EXPECT_LE(std::fabs(e - (-0.125)), 1e-5 * 0.125);
         EXPECT_LE(std::fabs(ke + pe - e), 1e-14);
         // Momentum starts at exactly zero and the mirror-image pair keeps it there.
@@ -402,14 +404,15 @@ TEST(Sim, EnergyLogCountsHeatInTheTotal) {
     std::fclose(log);
     ASSERT_EQ(lines.size(), 3u); // header, step 0, step 3000
 
-    double ke[2], pe[2], heat[2], e[2];
+    double ke[2], pe[2], spring[2], heat[2], e[2];
     for (std::size_t r = 0; r < 2; ++r) {
         int step = 0;
         double t = 0, px = 0, py = 0, pz = 0;
-        ASSERT_EQ(std::sscanf(lines[r + 1].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step, &t,
-                              &ke[r], &pe[r], &heat[r], &e[r], &px, &py, &pz),
-                  9);
-        EXPECT_EQ(e[r], ke[r] + pe[r] + heat[r]);
+        ASSERT_EQ(std::sscanf(lines[r + 1].c_str(), "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &step,
+                              &t, &ke[r], &pe[r], &spring[r], &heat[r], &e[r], &px, &py, &pz),
+                  10);
+        EXPECT_EQ(spring[r], 0.0); // apart at both rows: no spring compressed
+        EXPECT_EQ(e[r], ((ke[r] + pe[r]) + spring[r]) + heat[r]);
     }
     EXPECT_EQ(heat[0], 0.0);
     EXPECT_NEAR(heat[1], total_heat(p), 1e-15);

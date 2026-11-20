@@ -163,6 +163,18 @@ jobs:
           python -c "import imageio_ffmpeg as f; n, _ = f.count_frames_and_secs('cloud.mp4'); print(n, 'frames'); assert n == 5"
       - name: Plot the same run's energy log (fails if energy.csv's format and plot_energy.py disagree)
         run: python scripts/plot_energy.py frames/cloud/energy.csv -o energy.png --title "CI cloud run"
+      # Smoke collision (#17): two small relaxed planets that really collide (first
+      # contact at step ~210 of 600). planet_sim exits 2 if anything becomes NaN/Inf.
+      # energy.csv's total counts kinetic, gravity, contact springs and heat, so it
+      # should hold. Measured with this dev build: largest rise between rows 8.9e-5,
+      # furthest from the start 1.7e-4 (an error that appears as contacts begin and
+      # shrinks with dt, docs/notes.md). The limits are about 2x that. Doubling the
+      # spring energy moves the total by 3e-3, and not booking heat by 3e-2.
+      - name: Smoke collision (fails on NaN or an energy rise/drift)
+        run: |
+          ./build/dev/planet_sim --config configs/smoke.cfg --out smoke
+          python scripts/plot_energy.py smoke/energy.csv -o smoke_energy.png \
+            --title "CI smoke collision" --max-rise 2e-4 --max-drift 4e-4
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -171,6 +183,7 @@ jobs:
             cloud.mp4
             cloud.png
             energy.png
+            smoke_energy.png
           if-no-files-found: ignore
 
   # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code

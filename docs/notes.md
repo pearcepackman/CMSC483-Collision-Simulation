@@ -249,6 +249,20 @@ All pairs goes up about 4x each time N doubles (O(N²)); the grid about 2x (O(N)
 
 _Upcoming: grid contact in parallel (#27): splitting the particle loop, building the grid with threads, and storing particles in cell order._
 
+### Every energy counted, conservation tests and the CI smoke collision (Nov 2026, #59, #16, #17)
+**Decision:** [`contact_energy()`](../src/contact.cpp) sums ½·k·δ² over overlapping pairs, each pair once, with the same overlap rules as the force (exactly touching or coincident pairs count 0). It is O(N²) like `potential_energy`, so it only runs on energy-log rows. `energy.csv` is now `step,t,kinetic,potential,contact,heat,total,px,py,pz` with total = kinetic + potential + contact + heat. `scripts/plot_energy.py` reads it, rejects logs from before the change with a "rerun planet_sim" message, and gained `--max-drift`, which fails a run whose total ever moves more than a limit from its start, in either direction. `configs/smoke.cfg` now runs 600 steps: at 200 the planets never touched (first contact is at about step 210, because relaxation shrinks them).
+**What the total does now:** in the head-on run the 0.33 dip during the impact is gone (the springs hold that energy), and the total never gets more than 1.6e-6 above its start. It ends 0.032 below the start, 0.57% of |E0|: the 1.3% of the damper's work that the heat bookkeeping misses (#46), 1.3% of 2.48. The other leftover is an error that appears as contacts begin: in the smoke run and in two small planets colliding, the total rises up to 5e-5 to 9e-5 above its start, and the rise shrinks roughly in proportion to dt (2.9e-5 at dt/4), which points at the moment a contact switches on rather than the leapfrog's usual dt² error. In a single damped bounce it jumps 7e-3 of the kinetic energy for one step at first contact, then settles back.
+**Evidence:** [tests/test_conservation.cpp](../tests/test_conservation.cpp):
+- spring energy matches hand-computed pairs, counts each pair once, and is 0 for touching, coincident, N = 0 and N = 1;
+- through an undamped bounce the total stays within 1e-4 of the starting kinetic energy at every step, and through a damped one within 2e-2;
+- two 150-particle planets colliding for 300 steps keep momentum to 1e-13 of Σ|mv| (measured 1e-15) and, hit off-center, angular momentum to 1e-12 of Σ|m r×v| (measured 9e-16), since gravity and contact both push along the line between two particles;
+- the total never rises more than 1.5e-4 above its start there (measured up to 7.3e-5);
+- repeat runs, and OpenMP at 1 vs 4 threads, give identical bits.
+
+Counting each pair twice, dropping the ½ or the square in the spring energy each failed 4 tests. The CI smoke step (in the `render` job) fails if the largest rise between rows is above 2e-4 or the total moves more than 4e-4 from its start (measured 8.9e-5 and 1.7e-4 with the dev build). Doubling the spring energy moved it 3e-3 and not booking heat moved it 3e-2; both failed the step.
+
+![Head-on energy, every term counted](figures/fig_head_on_energy_complete.png)
+
 ## Scaling results
 
 _Upcoming: runtime vs N (log-log), strong scaling, efficiency, Amdahl's-law fit. Record CPU/GPU model and core count with every result._

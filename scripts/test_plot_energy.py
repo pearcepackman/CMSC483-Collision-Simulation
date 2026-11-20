@@ -10,13 +10,14 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plot_energy  # noqa: E402
 
-HEADER = "step,t,kinetic,potential,heat,total,px,py,pz\n"
+HEADER = "step,t,kinetic,potential,contact,heat,total,px,py,pz\n"
 
 
-def row(step, t, ke, pe, px=0.0, heat=0.0):
-    """One line as planet_sim's write_energy_row() writes it (total = ke + pe + heat)."""
-    return "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0,0\n" % (step, t, ke, pe, heat,
-                                                             ke + pe + heat, px)
+def row(step, t, ke, pe, px=0.0, heat=0.0, contact=0.0):
+    """One line as planet_sim's write_energy_row() writes it
+    (total = ke + pe + contact + heat)."""
+    return "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0,0\n" % (
+        step, t, ke, pe, contact, heat, ke + pe + contact + heat, px)
 
 
 class PlotEnergyTest(unittest.TestCase):
@@ -65,6 +66,22 @@ class PlotEnergyTest(unittest.TestCase):
         self.assertAlmostEqual(s["change"], 0.0, places=15)
         self.assertIsNone(s["rise_step"])
 
+    def test_total_includes_contact(self):
+        # Mid-impact, kinetic energy is held in compressed springs: total stays -1.0.
+        path = self.write("contact.csv", HEADER + row(0, 0, 0.5, -1.5)
+                          + row(1, 1, 0.25, -1.5, contact=0.25))
+        e = plot_energy.load_energy(path)
+        self.assertEqual(e["contact"].tolist(), [0.0, 0.25])
+        self.assertEqual(e["total"].tolist(), [-1.0, -1.0])
+
+    def test_old_log_says_to_rerun(self):
+        old = self.write("old.csv", "step,t,kinetic,potential,heat,total,px,py,pz\n"
+                         "0,0,0.5,-1.5,0,-1,0,0,0\n")
+        with self.assertRaises(ValueError) as cm:
+            plot_energy.load_energy(old)
+        self.assertIn("rerun planet_sim", str(cm.exception))
+        self.assertIn("old.csv", str(cm.exception))
+
     def test_loads_crlf_and_endings(self):
         body = row(0, 0.0, 0.5, -1.5) + row(5, 0.01, 0.4, -1.5)
         good = {
@@ -84,13 +101,13 @@ class PlotEnergyTest(unittest.TestCase):
             "wrong_header.csv": "step,t,kinetic,potential,total\n" + good,
             # A log from before the heat column (#46): its header no longer matches.
             "before_heat.csv": "step,t,kinetic,potential,total,px,py,pz\n0,0,0.5,-1.5,-1,0,0,0\n",
-            "columns.csv": HEADER + "0,0,0.5,-1.5,-1.0,0,0,0\n",
+            "columns.csv": HEADER + "0,0,0.5,-1.5,0,-1.0,0,0,0\n",
             "blank_middle.csv": HEADER + good + "\n" + row(5, 0.01, 0.4, -1.5),
-            "not_a_number.csv": HEADER + "0,0,fast,-1.5,0,-1,0,0,0\n",
+            "not_a_number.csv": HEADER + "0,0,fast,-1.5,0,0,-1,0,0,0\n",
             "comment.csv": HEADER + "# note\n" + good,
             "steps_go_down.csv": HEADER + row(5, 0.01, 0.4, -1.5) + good,
             "steps_repeat.csv": HEADER + good + good,
-            "fractional_step.csv": HEADER + "0.5,0,0.5,-1.5,0,-1,0,0,0\n",
+            "fractional_step.csv": HEADER + "0.5,0,0.5,-1.5,0,0,-1,0,0,0\n",
         }
         for name, text in bad.items():
             with self.assertRaises(ValueError, msg=name) as cm:
@@ -116,7 +133,7 @@ class PlotEnergyTest(unittest.TestCase):
         self.assertAlmostEqual(s["change"], -0.3, places=12)
 
     def test_summary_flags_nan(self):
-        path = self.write("nan.csv", HEADER + row(0, 0, 0.5, -1.5) + "1,1,nan,-1.5,0,nan,0,0,0\n")
+        path = self.write("nan.csv", HEADER + row(0, 0, 0.5, -1.5) + "1,1,nan,-1.5,0,0,nan,0,0,0\n")
         s = plot_energy.summarize(plot_energy.load_energy(path))
         self.assertFalse(s["finite"])
         self.assertEqual(s["max_rise"], 0.0)  # a NaN isn't a rise; the run is reported as blown up
@@ -190,6 +207,29 @@ class PlotEnergyTest(unittest.TestCase):
         code, _, _ = self.run_main([exact, "-o", png, "--max-rise", "0.2499999"])
         self.assertEqual(code, 3)
 
+    def test_max_drift_catches_a_slow_climb_or_a_loss(self):
+        # total: -1.0, -0.99, -0.98, -0.97: no single rise above 0.011, but 0.03 above the start.
+        path = self.write("climb.csv", HEADER + row(0, 0, 0.5, -1.5) + row(1, 1, 0.51, -1.5)
+                          + row(2, 2, 0.52, -1.5) + row(3, 3, 0.53, -1.5))
+        s = plot_energy.summarize(plot_energy.load_energy(path))
+        self.assertAlmostEqual(s["max_drift"], 0.03, places=12)
+        png = os.path.join(self.dir, "e.png")
+        code, out, err = self.run_main([path, "-o", png, "--max-rise", "0.011"])
+        self.assertEqual(code, 0, err)  # each rise is small enough
+        self.assertIn("furthest from the start: 0.03", out)
+        code, _, err = self.run_main([path, "-o", png, "--max-rise", "0.011", "--max-drift", "0.02"])
+        self.assertEqual(code, 3)
+        self.assertIn("moved 0.03 from its start, more than --max-drift 0.02", err)
+        code, _, err = self.run_main([path, "-o", png, "--max-drift", "0.05"])
+        self.assertEqual(code, 0, err)
+        # Energy that goes missing counts too: the total dips 0.25 below its start (as if
+        # heat weren't booked) without ever rising.
+        dip = self.write("dip.csv", HEADER + row(0, 0, 0.5, -1.5) + row(1, 1, 0.25, -1.5)
+                         + row(2, 2, 0.25, -1.5))
+        self.assertEqual(plot_energy.summarize(plot_energy.load_energy(dip))["max_drift"], 0.25)
+        code, _, _ = self.run_main([dip, "-o", png, "--max-rise", "0", "--max-drift", "0.1"])
+        self.assertEqual(code, 3)
+
     def test_main_errors(self):
         png = os.path.join(self.dir, "e.png")
         code, _, err = self.run_main([os.path.join(self.dir, "missing.csv"), "-o", png])
@@ -204,13 +244,14 @@ class PlotEnergyTest(unittest.TestCase):
         self.assertIn("writing", err)
         self.assertIn("e.xyz", err)
         self.assertNotIn("Traceback", err)
-        nan = self.write("nan.csv", HEADER + row(0, 0, 0.5, -1.5) + "1,1,nan,-1.5,0,nan,0,0,0\n")
+        nan = self.write("nan.csv", HEADER + row(0, 0, 0.5, -1.5) + "1,1,nan,-1.5,0,0,nan,0,0,0\n")
         code, _, err = self.run_main([nan, "-o", png])
         self.assertEqual(code, 1)
         self.assertIn("blew up", err)
-        for bad in ["-1", "nan", "inf"]:
-            code, _, _ = self.run_main([self.falling(), "-o", png, "--max-rise", bad])
-            self.assertEqual(code, 2, bad)
+        for flag in ["--max-rise", "--max-drift"]:
+            for bad in ["-1", "nan", "inf"]:
+                code, _, _ = self.run_main([self.falling(), "-o", png, flag, bad])
+                self.assertEqual(code, 2, flag + " " + bad)
 
 
 if __name__ == "__main__":
