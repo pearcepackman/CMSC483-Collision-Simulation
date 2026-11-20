@@ -1,6 +1,6 @@
 ---
 name: plan-issue
-description: Pre-work planning for one GitHub issue in this repo. Loads the issue, checks its dependencies and assignee, compares it against the code and docs, asks the user the questions that change the implementation, proposes splitting it if needed, and writes a self-contained implementation plan, then stops for approval. After approval it only creates/edits issues and posts the plan as an issue comment. Never touches git. Use when the user says /plan-issue <number>.
+description: Pre-work planning for one GitHub issue in this repo. Loads the issue, checks its dependencies and assignee, compares it against the code and docs, asks the user the questions that change the implementation, proposes splitting it if needed, writes a self-contained implementation plan split into parallel work streams, has an adversarial subagent attack the plan, then stops for approval. After approval it creates/edits issues and posts the plan as an issue comment. Use when the user says /plan-issue <number>.
 argument-hint: "[issue-number]"
 disable-model-invocation: true
 allowed-tools: Bash(gh issue view *) Bash(gh issue list *) Bash(gh label list *) Bash(gh api user *) Bash(git status *) Bash(git log *) Bash(git diff *)
@@ -10,7 +10,7 @@ allowed-tools: Bash(gh issue view *) Bash(gh issue list *) Bash(gh label list *)
 
 Plan issue **#$0**. Run the phases in order. **Phase 5 is a hard stop:** present the plan and end your turn. Until the user approves, only read: no file edits, no GitHub writes.
 
-**Never do git work** (branches, commits, pushes, PRs). The user does all of it. See the git rule in `CLAUDE.md`.
+**No git work while planning.** Branches, commits, pushes and PRs happen during implementation, as the git section of `CLAUDE.md` allows.
 
 The user is new to C++/HPC: explain jargon in a few words the first time it appears.
 
@@ -88,6 +88,20 @@ The plan must stand on its own: someone in a fresh session should be able to imp
 6. **Docs**: a `docs/notes.md` entry if a design decision is made.
 7. **Verification**: the exact commands that must pass (presets, tests at `OMP_NUM_THREADS=1` and `4`, `asan`, `tsan` if parallel code, `hip` if GPU code, format check).
 8. **Done-when map**: a table mapping each "Done when" box to the plan step that satisfies it.
+9. **Work split**: the plan cut into streams that can be built at the same time because they touch **different files** (e.g. a C++ function + its test, a CI job, a Python script), each with its files, what it needs from the other streams (a function signature fixed in §3 is enough), and how it's verified on its own. Say which stream goes first if one blocks the others, and when the work is too small to be worth splitting (one stream is fine).
+
+## Phase 5b: Adversarial plan review
+
+Before showing the plan, launch **one** subagent (Agent tool, `general-purpose`) to attack it. Keep it **light**: give it the plan text, the issue numbers and the files the plan touches; tell it to read the code, change nothing in the repo, spend **about 5 minutes**, run **at most two cheap experiments** (a short `planet_sim` run or a tiny program in the scratchpad) and only where a number decides a finding, and report **at most 8 findings**, the most damaging first. Ask it to assume the plan is wrong and try to break it:
+
+- **Correctness:** edge inputs (N = 0 or 1, coincident particles, huge dt, a NaN mid-run), numerics and tolerances, a design that can't meet a "Done when" box, a test that would pass even if the code were wrong.
+- **Usability and UX:** confusing flags, error messages that don't say how to fix the problem, output formats that break existing readers (scripts, CSV headers, the viewer), defaults that surprise.
+- **Security and robustness:** untrusted input (config files, command-line values, file paths: overwriting files, path traversal, huge allocations), CI steps that could leak secrets or run untrusted code.
+- **Fit:** breaks something the other person owns, conflicts with `CLAUDE.md` rules, CI that wouldn't actually run the new tests, missing docs or progress-log entry.
+
+It returns findings as severity (`blocker` / `should-fix` / `nit`), the plan step, the problem, a concrete failure scenario, and a fix, marked `CONFIRMED` (it ran something) or `PLAUSIBLE`. Fold every finding you agree with into the plan before showing it. List the ones you rejected, each with one line on why.
+
+Skip this phase only if the user passes `no-adversarial` or the plan is the Phase 2 fast path; say so in one line.
 
 Then ask: **"Approve, edit, or reject the plan? If approved, I'll post it as a comment on #$0 [and create the split issues]."**
 
@@ -101,3 +115,13 @@ Do only what was approved:
 - Post the final plan (with the user's edits) as a comment: `gh issue comment $0 --body-file <file>`. Write temp files to the scratchpad, not the repo.
 
 Report the links, then say the issue is ready to implement. If the session is long, suggest `/clear` and starting fresh with "implement the plan in the last comment on #$0".
+
+## Phase 7: Implementing (only when the user asks)
+
+If the plan has two or more streams (§9) and the user wants it built, the streams can run as **parallel subagents** (Agent tool, launched in one message), one per stream, each given the plan, its stream, and its file list:
+
+- They all work in the **same working tree** (the feature branch), on their own files only. The agents themselves don't run git: no worktrees, branches, stashes or commits, so no `isolation: "worktree"`. You commit once everything is integrated and verified.
+- Each writes its tests first, builds, and runs its own tests, then reports what it changed and what it verified.
+- You then integrate: read every change, run the plan's full Verification list yourself, and fix anything that breaks between streams. A stream's "it passed" is not proof until your own run shows it.
+
+Parallel agents cost more in total than doing the work yourself, so use them when the streams are big enough that waiting on them in sequence would be slow, and say in one line that you're doing it.

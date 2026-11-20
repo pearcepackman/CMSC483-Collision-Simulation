@@ -17,11 +17,15 @@ git ls-files '*.cpp' '*.hpp' '*.hip' | xargs clang-format --dry-run --Werror
 
 Formatter: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt` (pinned clang-format). Scripts: `.venv/bin/pip install -r scripts/requirements.txt` (pinned numpy, matplotlib, imageio-ffmpeg).
 
-## Git: hard rule
+## Git: what Claude may do
 
-**IMPORTANT: Never change git or pull-request state unless the user asks for that specific action in their current message.** No commits, staging, branches, checkouts/switches, merges, rebases, resets, stashes, tags, pushes or pulls, and no creating, merging or closing PRs (including through `gh api`). Approving a plan, a review finding, or a skill's output is **not** permission; ask separately. Instead, say what you'd run and let the user run it or tell you to.
+Pearce allows Claude to do the everyday branch work so a feature goes from plan to an open PR without hand-offs:
 
-Allowed without asking: reading state (`git status`, `log`, `diff`, `show`, `fetch`; `gh pr view`, `gh run`, `gh issue view/list`), GitHub planning: creating and editing issues, milestones and labels, and commenting on issues; and **PR descriptions and comments** on PRs the user opened: keep each description current with one `Closes #N` line per issue it finishes plus a short summary, and comment when useful. `.claude/settings.json` backs this up with permission prompts.
+- **Allowed:** `git fetch`/`pull` on `main`, creating a feature branch from an up-to-date `main` (name it after the issue, e.g. `59-energy-tests`), `git add` of the files the work changed, commits, pushing that branch, opening a PR with `gh pr create`, and keeping its description current (one `Closes #N` line per issue it finishes, plus a short summary). Also issues, milestones, labels, and comments on issues and PRs.
+- **Commit messages and PR text** follow the repo's format (`Added:` / `Edited:` / `Added/Edited:` / `Fixed:`) and **never mention Claude, Claude Code or AI**, and never add `Co-Authored-By` or "Generated with" lines.
+- **Never, unless asked in the current message:** merging or closing PRs (Pearce reviews and merges), pushing to `main`, force-pushing, rebasing, resetting, stashing, tagging, deleting branches, or changing branch protection. Only commit after the local checks in `/pre-push` pass.
+
+`.claude/settings.json` still asks before the risky commands.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 ---
 name: pre-push
-description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review (plus an adversarial review for parallel/physics code, or on request), gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, updates stale docs (README status, design notes, plan), runs the local equivalent of CI, and proposes a commit message. Use when the user says /pre-push, "ready to push", "check before I push", or similar.
+description: Pre-push gate for this repo. Scopes the diff against main, runs a senior review (plus an adversarial review for parallel/physics code, or on request), gets the user's sign-off on findings, fixes approved ones, scans for secrets and junk files, adds missing tests, updates stale docs (README status, design notes, plan), runs the local equivalent of CI, then commits, pushes the branch and opens or updates the PR (never merges). Use when the user says /pre-push, "ready to push", "check before I push", or similar.
 argument-hint: "[adversarial | no-adversarial]"
 ---
 
@@ -146,7 +146,7 @@ If a failure is caused by the diff, fix it and re-run from step 1. If it isn't c
 
 Give a short summary as a checklist: review (N found / N fixed / N skipped), secrets/junk, tests added, docs updated (Phase 6b), and each CI step (passed / failed / skipped + reason).
 
-Then propose **one** commit subject line in exactly one of these forms:
+Then write **one** commit subject line in exactly one of these forms:
 
 ```
 Added: <summary>
@@ -159,6 +159,4 @@ Fixed: <summary>
 - Summary is **around 50 characters**, specific, no trailing period (e.g. `Added: OpenMP gravity backend with match test`).
 - Put it in a code block so it's easy to copy.
 
-**PR description:** if the branch has an open PR, update its description with `gh pr edit --body-file` (allowed by the git rule in `CLAUDE.md`): one `Closes #N` line per issue from Phase 1 that this work finishes, then a short summary of what's done and anything still in progress. Keep any text the user wrote. If there's no PR yet, give the description for the user to paste when they open it.
-
-Don't commit, push, touch branches, or create/merge/close PRs. The user does that.
+**Commit, push, PR** (per the git section of `CLAUDE.md`): once every step above passed, commit with that message (stage only the files this work changed, never junk), push the branch, and open the PR with `gh pr create` if there isn't one, or update its description with `gh pr edit --body-file`. The description has one `Closes #N` line per issue from Phase 1 that this work finishes, then a short summary of what's done and anything still in progress; keep any text the user wrote. No mention of Claude or AI anywhere. Never merge or close the PR: the user reviews and merges. If the user said not to commit this time, give the message and description instead.
