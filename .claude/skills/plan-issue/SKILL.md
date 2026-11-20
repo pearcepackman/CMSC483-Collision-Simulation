@@ -92,7 +92,7 @@ The plan must stand on its own: someone in a fresh session should be able to imp
 
 ## Phase 5b: Adversarial plan review
 
-Before showing the plan, launch **one** subagent (Agent tool, `general-purpose`) to attack it. Give it the plan text, the issue numbers, and the files the plan touches; tell it to read the code, change nothing in the repo, and write any throwaway programs only in the scratchpad. Ask it to assume the plan is wrong and try to break it:
+Before showing the plan, launch **one** subagent (Agent tool, `general-purpose`) to attack it. Keep it **light**: give it the plan text, the issue numbers and the files the plan touches; tell it to read the code, change nothing in the repo, spend **about 5 minutes**, run **at most two cheap experiments** (a short `planet_sim` run or a tiny program in the scratchpad) and only where a number decides a finding, and report **at most 8 findings**, the most damaging first. Ask it to assume the plan is wrong and try to break it:
 
 - **Correctness:** edge inputs (N = 0 or 1, coincident particles, huge dt, a NaN mid-run), numerics and tolerances, a design that can't meet a "Done when" box, a test that would pass even if the code were wrong.
 - **Usability and UX:** confusing flags, error messages that don't say how to fix the problem, output formats that break existing readers (scripts, CSV headers, the viewer), defaults that surprise.
