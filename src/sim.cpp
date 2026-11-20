@@ -6,6 +6,7 @@
 
 #include <omp.h>
 
+#include "contact.hpp"
 #include "diagnostics.hpp"
 #include "forces.hpp"
 #include "init.hpp"
@@ -23,16 +24,17 @@ std::size_t first_non_finite(const Particles &p) {
 }
 
 void write_energy_header(FILE *f) {
-    std::fprintf(f, "step,t,kinetic,potential,heat,total,px,py,pz\n");
+    std::fprintf(f, "step,t,kinetic,potential,contact,heat,total,px,py,pz\n");
 }
 
 void write_energy_row(FILE *f, int step, double t, const Particles &p, const SimParams &params) {
     double ke = kinetic_energy(p);
     double pe = potential_energy(p, params);
+    double spring = contact_energy(p, params);
     double heat = total_heat(p);
     Vec3 mom = total_momentum(p);
-    std::fprintf(f, "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n", step, t, ke, pe, heat,
-                 ke + pe + heat, mom.x, mom.y, mom.z);
+    std::fprintf(f, "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n", step, t, ke, pe,
+                 spring, heat, ke + pe + spring + heat, mom.x, mom.y, mom.z);
 }
 
 bool finish_log(FILE *f) {

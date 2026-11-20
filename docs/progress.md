@@ -157,3 +157,14 @@ Timed on one thread, on planets where every particle touches its neighbors, the 
 This also matters for parallel computing. Before, gravity ran on all threads but contact checked every pair on one thread, and Amdahl's law says the part that stays serial ends up setting the speed. The grid shrinks that serial part from O(N²) to O(N). The next step (#27) splits it across threads too. Each particle still adds up its own forces from all its neighbors, so threads can share out the particles without ever writing to the same memory. The grid version does have two limits we found in review: one much larger particle makes every cube large and slow (#62), and particles aren't stored in cube order, so the cost per particle creeps up from 1.4 to 2.2 µs as the arrays outgrow the cache.
 
 We'll measure the full head-on run before and after with the benchmark harness (#20).
+
+## Nov 20: Every energy counted, and a real collision in CI (#59, #16, #17)
+
+The energy log now also counts the energy stored in squeezed contact springs. Before, the total dipped by 0.33 in the middle of the head-on impact, which made the log useless as a pass/fail check on collisions. Now kinetic + gravity + springs + heat holds through the whole collision: it never gets more than 1.6e-6 above where it started, and it ends 0.032 (0.57%) below, which is the small share of the dampers' work the heat bookkeeping misses.
+
+![Head-on energy, every term counted](figures/fig_head_on_energy_complete.png)
+
+New tests check that momentum and angular momentum survive a collision (to about 1e-15 of their size; an off-center hit makes the merged planets spin, and the spin is kept), that the total never climbs, and that the same run gives exactly the same numbers twice, and with 1 or 4 OpenMP threads.
+
+CI now runs a small collision on every pull request and fails if anything becomes NaN or the energy total moves more than twice what we measured. The old smoke setup turned out to stop 10 steps before the planets touched, so it now runs 600 steps instead of 200. We checked the check: doubling the spring energy, or not booking heat, both make it fail.
+

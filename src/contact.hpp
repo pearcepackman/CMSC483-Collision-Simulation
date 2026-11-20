@@ -22,6 +22,12 @@
 // Explicit-step limits (docs/notes.md): energy grows if c * dt / m_eff >= 2, and pairs
 // faster than about (r_i + r_j) * sqrt(k / m_eff) pass through each other.
 
+// Energy stored in compressed contact springs: the sum over overlapping pairs, each pair
+// once, of 0.5 * k * delta^2. Same overlap rules as the force (a pair exactly touching
+// or at the same point counts 0), and 0 when contact is off. O(N^2) like
+// potential_energy, so only compute it when writing an energy-log row (#59).
+double contact_energy(const Particles &p, const SimParams &params);
+
 // Checks every pair, O(N^2): the reference the grid version is tested against.
 // Keep it simple; don't speed it up.
 void compute_contact_bruteforce(Particles &p, const SimParams &params);

@@ -18,6 +18,16 @@ Vec3 total_momentum(const Particles &p) {
     return P;
 }
 
+Vec3 total_angular_momentum(const Particles &p) {
+    Vec3 L{0.0, 0.0, 0.0};
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        L.x += p.mass[i] * (p.y[i] * p.vz[i] - p.z[i] * p.vy[i]);
+        L.y += p.mass[i] * (p.z[i] * p.vx[i] - p.x[i] * p.vz[i]);
+        L.z += p.mass[i] * (p.x[i] * p.vy[i] - p.y[i] * p.vx[i]);
+    }
+    return L;
+}
+
 double kinetic_energy(const Particles &p) {
     double ke = 0.0;
     for (std::size_t i = 0; i < p.size(); ++i) {

@@ -70,7 +70,7 @@ planet_sim --config configs/head_on.cfg --out frames/run       # planets from a 
 planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
 ```
 
-`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,heat,total,px,py,pz`, where `heat` is the energy contact damping has turned into heat and `total` = kinetic + potential + heat). Exit codes: 0 ok, 1 usage/setup error (including a bad config file), 2 the simulation produced NaN/Inf. Scenario files are `key = value` text; see [configs/head_on.cfg](configs/head_on.cfg) for every key.
+`--out` writes `frame_NNNNN.csv` files and `energy.csv` (`step,t,kinetic,potential,contact,heat,total,px,py,pz`, where `contact` is the energy held in compressed contact springs, `heat` is the energy contact damping has turned into heat, and `total` = kinetic + potential + contact + heat). Exit codes: 0 ok, 1 usage/setup error (including a bad config file), 2 the simulation produced NaN/Inf. Scenario files are `key = value` text; see [configs/head_on.cfg](configs/head_on.cfg) for every key.
 
 Turn a run's frames into a video (a quick-look debug tool, colored by planet; ffmpeg comes with the pip packages):
 

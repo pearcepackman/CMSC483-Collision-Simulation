@@ -60,6 +60,29 @@ void compute_contact_bruteforce(Particles &p, const SimParams &params) {
     }
 }
 
+double contact_energy(const Particles &p, const SimParams &params) {
+    if (!params.contact_enabled) {
+        return 0.0;
+    }
+    const std::size_t n = p.size();
+    double e = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = i + 1; j < n; ++j) {
+            double dx = p.x[i] - p.x[j];
+            double dy = p.y[i] - p.y[j];
+            double dz = p.z[i] - p.z[j];
+            double reach = p.radius[i] + p.radius[j];
+            double d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= reach * reach || d2 == 0.0) { // as in compute_contact_bruteforce
+                continue;
+            }
+            double overlap = reach - std::sqrt(d2);
+            e += 0.5 * params.contact_k * overlap * overlap;
+        }
+    }
+    return e;
+}
+
 // Particles that touch are less than 2 * max radius apart, so a cell of that side puts
 // them in the same or neighboring cells. The tiny margin is only a safeguard: review
 // scanned pairs just below every cell boundary up to 2^40 cells and found none two

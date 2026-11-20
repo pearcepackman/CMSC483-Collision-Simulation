@@ -49,11 +49,10 @@ RunResult run_simulation(Particles &p, const SimParams &params, const RunOptions
 std::size_t first_non_finite(const Particles &p);
 
 // The energy log: a header, then one row per output step:
-//   step,t,kinetic,potential,heat,total,px,py,pz
-// with total = kinetic + potential + heat. While particles are in contact the total can
-// rise a little: energy stored in compressed contact springs isn't counted yet (#59),
-// and each step's heat is booked when its forces are computed, half a step before the
-// kinetic energy finishes dropping. Both are gone once the contacts end.
+//   step,t,kinetic,potential,contact,heat,total,px,py,pz
+// with total = kinetic + potential + contact (energy in compressed contact springs) +
+// heat. It stays nearly constant through a collision. What's left is a small error that
+// appears as contacts begin, shrinking roughly in proportion to dt (docs/notes.md, #59).
 void write_energy_header(FILE *f);
 void write_energy_row(FILE *f, int step, double t, const Particles &p, const SimParams &params);
 
