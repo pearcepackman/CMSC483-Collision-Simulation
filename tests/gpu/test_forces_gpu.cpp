@@ -154,9 +154,11 @@ TEST(GpuFloatGravity, MatchesSerialAcrossSizes) {
         }
         double err = max_rel_error(gpu, serial, accel_norms(serial));
         std::printf("float gravity n=%zu offset=%g: max relative error %.3g\n", c.n, c.offset, err);
-        // Measured up to 3.5e-6 (the cloud at x = 3 is as good as the one at the origin,
-        // thanks to the hi/lo positions).
+        // Measured up to 3.5e-6, the same at x = 3 (gravity separations are ~1, so this
+        // case doesn't need the hi/lo positions; the contact tests at x = 2.5 do).
         EXPECT_LT(err, 4e-5);
+        // And above double's ~1e-15: proves the float kernel really ran.
+        EXPECT_GT(err, 1e-10);
     }
 }
 
@@ -233,6 +235,7 @@ TEST(GpuForces, MatchCpuContactOnApproachingPlanets) {
             // Measured 1.2e-4 and 1.7e-7. A missing heat factor is a 10% heat error here
             // and a flipped damper sign moves contact forces by about 2%.
             EXPECT_LT(err, 1e-3);
+            EXPECT_GT(err, 1e-10); // float really ran (double gives ~1e-15)
             EXPECT_LT(heat_err, 2e-6 * heat_max);
         }
     }
@@ -348,4 +351,33 @@ TEST(GpuForces, SwitchingPrecisionMidRunStaysClose) {
     }
     std::printf("precision switching: worst position difference %.3g after 15 steps\n", worst);
     EXPECT_LT(worst, 1e-7); // measured 8.2e-9
+}
+
+TEST(GpuForces, RelaxationRunsInDoubleAndRestoresFloat) {
+    REQUIRE_GPU();
+    // Float and double runs must start from the same planets, so relax_planet always uses
+    // double on the GPU, and puts the caller's setting back afterwards.
+    SimParams params = contact_params();
+    PlanetSpec spec;
+    spec.n = 150;
+    spec.radius = 0.5 * std::cbrt(150.0 / 250.0);
+    spec.particle_radius = 0.06;
+    spec.mass = 0.15;
+    spec.seed = 4;
+    Particles in_float, in_double;
+    make_planet(in_float, spec);
+    make_planet(in_double, spec);
+    {
+        PrecisionGuard guard(true);
+        relax_planet(in_double, params, BACKEND_HIP, 5.0, 0.0, 20); // 20 steps, never calm
+    }
+    {
+        PrecisionGuard guard(false);
+        relax_planet(in_float, params, BACKEND_HIP, 5.0, 0.0, 20);
+        EXPECT_FALSE(hip_uses_double()); // the caller's float setting is back
+    }
+    for (std::size_t i = 0; i < in_float.size(); ++i) { // same arithmetic: same bits
+        ASSERT_EQ(in_float.x[i], in_double.x[i]) << "particle " << i;
+        ASSERT_EQ(in_float.vx[i], in_double.vx[i]) << "particle " << i;
+    }
 }

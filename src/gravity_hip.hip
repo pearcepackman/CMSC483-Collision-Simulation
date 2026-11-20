@@ -43,7 +43,8 @@ void hip_check(hipError_t err, const char *call, const char *file, int line) {
 // nearby positions far from the origin would otherwise lose the small overlaps contact
 // depends on (at x = 2.5 float positions step by 2.4e-7, overlaps are ~1e-4). With
 // (xj_hi - xi_hi) + (xj_lo - xi_lo) the separation keeps almost double accuracy. In
-// double, lo is 0.
+// double, lo is 0. Velocities stay plain float on purpose: the damper only needs their
+// difference, and at our speeds (< ~1) its rounding is far below the measured error.
 template <typename T> struct Inputs {
     const T *xh, *yh, *zh, *xl, *yl, *zl, *m, *r, *vx, *vy, *vz;
 };

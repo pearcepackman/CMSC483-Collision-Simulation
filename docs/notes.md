@@ -104,7 +104,26 @@ Across four runs, 6 threads gave 5.84–6.03x over 1-thread OpenMP. Serial took 
 
 **Build gotcha (Arch ROCm 7.2):** the ROCm clang guesses its install root as `/opt/rocm/lib` and can't find `hip/hip_runtime.h`; the `hip` preset passes `--rocm-path=/opt/rocm` and pins the compiler and ROCm root so it works from any shell.
 
-_Upcoming: pair-twice (no races) vs Newton's-3rd-law with atomics (half the work); OpenMP `schedule(static)` vs `dynamic`; HIP naive vs shared-memory tiled kernel; `float` vs `double` on the GPU._
+### Fast GPU forces: float, tiles, and contact in the kernel (Nov 2026, #26, #32, #66)
+**Decision:** one kernel, [`force_kernel<T>`](../src/gravity_hip.hip), computes gravity and, when contact is on, the contact forces and heat rate, with exactly the rules of `compute_contact_bruteforce`. The all-pairs loop already visits every pair, so contact costs almost nothing there and nothing is left running on one CPU thread; `compute_accelerations` calls `compute_forces_hip` for the hip backend instead of gravity plus the CPU grid contact. The kernel computes in float by default, with double selectable (`--gpu-precision`, viewer key `P`). It is written once for both precisions, which is the only reason the repo has templates. Double stays the reference: it still matches serial to 1e-12, and the older GPU tests run in double. Relaxation always runs in double, so a float run and a double run start from the same planets.
+
+Positions are passed as two floats each, x = hi + lo, and the separation of two particles is computed as (xj_hi − xi_hi) + (xj_lo − xi_lo). In plain float, positions at x = 2.5 step by 2.4e-7 while touching particles overlap by about 1e-4, and some contact forces came out 44% wrong (found in the plan review); with the split, contact at x = 2.5 is as accurate as at the origin. Velocities stay plain float: the damper only needs their difference, and at the speeds in our scenarios the rounding is far below the measured error. Particles are read in tiles of 256 through shared memory, the last tile's padding is skipped by index, and every thread reaches every sync.
+
+**Evidence (speed):** `planet_sim --bench`, Ryzen 5 7600X and RX 9060 XT, CPU numbers from the release build, ms per step:
+
+| | Serial | OpenMP, 6 threads | GPU before (naive double) | GPU now (float, tiled, contact in kernel) | vs serial | vs OpenMP |
+|---|---|---|---|---|---|---|
+| head_on.cfg, 4,000 particles with contact | 52.5 | 10.3 | 9.0 | 1.1 | 48x | 9.4x |
+| cloud, 10,000 | 287 | 52.7 | 30.5 | 2.1 | 137x | 25x |
+| cloud, 50,000 | 7,198 | 1,271 | 564 | 29 | 248x | 44x |
+
+Float gave the big gain, 15 to 20x (10k: 32.9 → 2.1 ms; 50k: 571 → 29 ms), because this consumer card has far less hardware for 64-bit math. Moving contact into the kernel took head_on from 3.7 to 1.1 ms: before, gravity took about 0.5 ms on the GPU and grid contact about 3 ms on one CPU thread, which is Amdahl's law in one line. Tiling did nothing measurable. In double it was even slightly slower (cloud 10k 30.5 → 32.9 ms, from the extra hi/lo adds), because in double the card is limited by its 64-bit math, not by memory. In float the whole step at 50k (29 ms) is about what the untiled kernel alone took in the October probe (30 ms): the card's caches already serve the repeated reads tiling is meant to save.
+
+**Evidence (accuracy):** [tests/gpu/test_forces_gpu.cpp](../tests/gpu/test_forces_gpu.cpp). Float gravity matches serial to 3.5e-6 relative at N = 2 to 4,096, and the tests also require the error to be above 1e-10, which proves the float kernel ran. With contact, on two planets pressed together and approaching, float matches the CPU to 1.2e-4 of |a_grav| + |a_contact| per particle and the heat rate to 1.7e-7 of the largest; double matches to 1e-15. A hand-computed approaching pair at x = 2.5 checks force and heat in both precisions. A 300-step float collision keeps momentum to 1.8e-9 and angular momentum to 2.6e-9 (double gets ~1e-15), and its energy total stays within the same 1.5e-4 as on the CPU. A flipped damper sign, a dropped heat factor, plain float positions, unskipped padding, and relaxation left in float each failed tests.
+
+**Float vs double over the whole head-on run** (5,000 steps, same relaxed start): 12.6 s vs 28.0 s, and the energy total changed by −0.0312 vs −0.0320, the known heat-bookkeeping gap in both, so float costs no energy accuracy. These full runs are 2.5 and 5.6 ms per step rather than the 1.1 ms in the table because they also write 201 frames and compute the O(N²) energy log on the CPU; and at 4,000 particles the GPU's fixed per-step costs (copies, launch) are a larger share, which is why float is only 2.2x faster here instead of 15 to 20x. The two runs' trajectories drift apart (kinetic energy differs by up to 0.011), as any chaotic system does.
+
+In the viewer: 50,000 particles at 26 ms per step and 35 fps; the head-on collision at 60 fps with 8 steps per frame. At 50k the O(N²) gravity itself is most of the frame, which is what Barnes-Hut (#35) is for.
 
 ---
 

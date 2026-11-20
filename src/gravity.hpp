@@ -65,7 +65,7 @@ void compute_gravity_hip(Particles &p, const SimParams &params);
 // uses this for BACKEND_HIP instead of gravity + CPU contact.
 void compute_forces_hip(Particles &p, const SimParams &params);
 
-// Frees the GPU buffers compute_gravity_hip keeps between calls.
+// Frees the GPU buffers compute_gravity_hip and compute_forces_hip keep between calls.
 void hip_release();
 
 // Total gravitational potential energy, softened to match the forces above:
