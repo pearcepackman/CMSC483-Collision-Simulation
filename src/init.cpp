@@ -262,8 +262,10 @@ static int steps_for(double t_dyn, double dt) {
     return std::max(1, static_cast<int>(s));
 }
 
-RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend, double drag,
-                         double ke_threshold, int max_steps) {
+namespace {
+
+RelaxResult relax_steps(Particles &p, const SimParams &params, Backend backend, double drag,
+                        double ke_threshold, int max_steps) {
     RelaxResult r;
     // One factor for every step: each velocity loses this fraction of itself, the same
     // as a drag force -drag * m * v over one step.
@@ -301,4 +303,21 @@ RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend,
     }
     r.settled = calm >= r.hold;
     return r;
+}
+
+} // namespace
+
+RelaxResult relax_planet(Particles &p, const SimParams &params, Backend backend, double drag,
+                         double ke_threshold, int max_steps) {
+#ifdef SIM_HAVE_HIP
+    // Always relax in double, so a float run and a double run start from the same planets
+    // and only the collision itself differs (#32). Restored on every return.
+    const bool saved = hip_uses_double();
+    hip_set_double(true);
+    RelaxResult r = relax_steps(p, params, backend, drag, ke_threshold, max_steps);
+    hip_set_double(saved);
+    return r;
+#else
+    return relax_steps(p, params, backend, drag, ke_threshold, max_steps);
+#endif
 }

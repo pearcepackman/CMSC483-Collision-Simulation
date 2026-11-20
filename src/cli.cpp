@@ -26,8 +26,8 @@ bool to_double(const char *s, double *out) {
 // Flags that take a value. Checked before looking for the value, so a typo like
 // `--bogus` reports "unknown flag", not "missing value".
 bool takes_value(const char *flag) {
-    const char *flags[] = {"--config", "--scenario", "--out",          "--backend", "--n",
-                           "--seed",   "--steps",    "--output-every", "--dt"};
+    const char *flags[] = {"--config", "--scenario",     "--out", "--backend",      "--n", "--seed",
+                           "--steps",  "--output-every", "--dt",  "--gpu-precision"};
     for (const char *f : flags) {
         if (std::strcmp(flag, f) == 0) {
             return true;
@@ -42,13 +42,16 @@ const char *cli_usage() {
     return "usage: planet_sim (--config <file> | --scenario orbit|figure8|cloud [--n N] "
            "[--seed S])\n"
            "                  [--backend serial|omp|hip] [--steps N] [--dt h] [--out <dir>]\n"
-           "                  [--output-every k] [--bench] [--help]\n"
+           "                  [--output-every k] [--gpu-precision float|double] [--bench] "
+           "[--help]\n"
            "  --config        scenario file (flags given here override it); needs the config\n"
            "                  loader (#13), until then it stops with 'not implemented'\n"
            "  --scenario      built-in gravity-only setup: orbit, figure8, or cloud of N "
            "particles\n"
            "  --out           write frames and energy.csv into <dir> (created if needed)\n"
            "  --output-every  frame + energy row every k steps (energy is O(N^2) to compute)\n"
+           "  --gpu-precision precision of the hip backend: float (default, fast) or double\n"
+           "                  (matches serial to ~1e-12); ignored by the other backends\n"
            "  --bench         time the step loop and print one 'bench ...' line; writes nothing\n"
            "exit codes: 0 ok, 1 usage or setup error, 2 simulation produced NaN/Inf\n";
 }
@@ -94,6 +97,13 @@ bool parse_cli(int argc, const char *const *argv, CliOptions *opts, std::string 
             if (!backend_available(opts->backend)) { // compute_gravity would abort
                 *error = std::string("this build has no ") + value +
                          " backend; build with: cmake --preset hip";
+                return false;
+            }
+        } else if (std::strcmp(flag, "--gpu-precision") == 0) {
+            if (std::strcmp(value, "float") == 0 || std::strcmp(value, "double") == 0) {
+                opts->gpu_double = std::strcmp(value, "double") == 0;
+            } else {
+                *error = std::string("--gpu-precision needs float or double, got '") + value + "'";
                 return false;
             }
         } else if (std::strcmp(flag, "--n") == 0) {

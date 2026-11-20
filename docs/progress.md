@@ -168,3 +168,20 @@ New tests check that momentum and angular momentum survive a collision (to about
 
 CI now runs a small collision on every pull request and fails if anything becomes NaN or the energy total moves more than twice what we measured. The old smoke setup turned out to stop 10 steps before the planets touched, so it now runs 600 steps instead of 200. We checked the check: doubling the spring energy, or not booking heat, both make it fail.
 
+## Nov 20: Fast GPU forces (#26, #32, #66)
+
+The GPU now does the whole force step in one kernel: gravity, contact and heat. It computes in single precision (float) by default, with double still available as the exact reference. On the head-on collision it went from barely beating OpenMP to 9.4 times faster than OpenMP and 48 times faster than serial.
+
+| ms per step | Serial | OpenMP, 6 threads | GPU before | GPU now |
+|---|---|---|---|---|
+| head-on, 4,000 particles | 52.5 | 10.3 | 9.0 | 1.1 |
+| cloud, 50,000 particles | 7,198 | 1,271 | 564 | 29 |
+
+Three changes, measured one at a time. Float was the big one, 15 to 20 times faster, because this gaming card has far less hardware for 64-bit math than for 32-bit. Moving contact into the GPU kernel took the head-on step from 3.7 to 1.1 ms: contact had been running on one CPU thread and was most of the step, which is Amdahl's law. Tiling through shared memory, the classic N-body optimization, made no measurable difference, because the card's caches already serve the repeated reads.
+
+Float has one trap. Far from the origin, float positions are too coarse for the tiny overlaps contact depends on, and some contact forces came out 44% wrong. We store each position as two floats, a main part and a small correction, which keeps the separation between two particles nearly as accurate as double. Over the whole head-on run, float conserves energy as well as double does.
+
+| 50,000 particles on the GPU, 35 fps | Head-on collision on the GPU, 60 fps |
+|---|---|
+| ![50k](media/viewer_50k_gpu_float.png) | ![impact](media/viewer_head_on_impact_gpu.png) |
+

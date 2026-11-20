@@ -113,6 +113,21 @@ TEST(Cli, HipBackendOnlyInHipBuilds) {
 #endif
 }
 
+TEST(Cli, GpuPrecisionFlag) {
+    CliOptions o;
+    std::string err;
+    ASSERT_TRUE(parse({"--scenario", "orbit"}, &o, &err)) << err;
+    EXPECT_FALSE(o.gpu_double); // float by default
+    ASSERT_TRUE(parse({"--scenario", "orbit", "--gpu-precision", "double"}, &o, &err)) << err;
+    EXPECT_TRUE(o.gpu_double);
+    ASSERT_TRUE(parse({"--scenario", "orbit", "--gpu-precision", "float"}, &o, &err)) << err;
+    EXPECT_FALSE(o.gpu_double);
+    EXPECT_FALSE(parse({"--scenario", "orbit", "--gpu-precision", "half"}, &o, &err));
+    EXPECT_NE(err.find("--gpu-precision needs float or double, got 'half'"), std::string::npos)
+        << err;
+    EXPECT_FALSE(parse({"--scenario", "orbit", "--gpu-precision"}, &o, &err)); // no value
+}
+
 TEST(Cli, UnknownFlagIsReportedAsUnknownEvenAtTheEnd) {
     // A trailing typo must say "unknown flag", not "missing value".
     CliOptions o;

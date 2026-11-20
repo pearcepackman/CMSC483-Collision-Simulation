@@ -26,6 +26,20 @@ namespace {
         }                                                                                          \
     } while (0)
 
+// Runs each test in double, the precision that matches serial to ~1e-12, and puts the
+// setting back afterwards so test order can't matter. Float has its own suites.
+class GravityHip : public testing::Test {
+  protected:
+    void SetUp() override {
+        saved_ = hip_uses_double();
+        hip_set_double(true);
+    }
+    void TearDown() override { hip_set_double(saved_); }
+
+  private:
+    bool saved_ = false;
+};
+
 Particles random_system(std::size_t n, unsigned seed) {
     Particles p;
     p.resize(n);
@@ -76,7 +90,7 @@ void check_against_serial(std::size_t n, unsigned seed) {
 
 } // namespace
 
-TEST(GravityHip, TwoParticlesMatchHandComputedForce) {
+TEST_F(GravityHip, TwoParticlesMatchHandComputedForce) {
     REQUIRE_GPU();
     // Mass 2 at the origin, mass 3 at (2, 3, 6): separation 7, so with eps = 0
     // a0 = 3 * (2,3,6) / 343 and a1 = -2 * (2,3,6) / 343.
@@ -98,7 +112,7 @@ TEST(GravityHip, TwoParticlesMatchHandComputedForce) {
     expect_rel_near(p.az[1], -2.0 * 6.0 / 343.0, 1e-14);
 }
 
-TEST(GravityHip, SingleParticleFeelsNoForce) {
+TEST_F(GravityHip, SingleParticleFeelsNoForce) {
     REQUIRE_GPU();
     // With eps = 0, a self-pull would be 0/0 = NaN, so this also proves j == i is skipped.
     Particles p;
@@ -114,14 +128,14 @@ TEST(GravityHip, SingleParticleFeelsNoForce) {
     EXPECT_EQ(p.az[0], 0.0);
 }
 
-TEST(GravityHip, EmptySystemIsANoOp) {
+TEST_F(GravityHip, EmptySystemIsANoOp) {
     REQUIRE_GPU();
     Particles p;
     compute_gravity_hip(p, test_params()); // must not launch a zero-block kernel
     EXPECT_EQ(p.size(), 0u);
 }
 
-TEST(GravityHip, MatchesSerialAroundBlockBoundaries) {
+TEST_F(GravityHip, MatchesSerialAroundBlockBoundaries) {
     REQUIRE_GPU();
     // The kernel uses 256 threads per block: one short of, exactly, and one past a full
     // block, plus a size that leaves the last block mostly empty.
@@ -131,12 +145,12 @@ TEST(GravityHip, MatchesSerialAroundBlockBoundaries) {
     }
 }
 
-TEST(GravityHip, MatchesSerialOnLargerCloud) {
+TEST_F(GravityHip, MatchesSerialOnLargerCloud) {
     REQUIRE_GPU();
     check_against_serial(4096, 3);
 }
 
-TEST(GravityHip, ReusesBuffersWhenSizeChanges) {
+TEST_F(GravityHip, ReusesBuffersWhenSizeChanges) {
     REQUIRE_GPU();
     // Grow, shrink, grow past the old capacity: cached GPU buffers must never hand back
     // a previous system's data or overflow.
@@ -147,7 +161,7 @@ TEST(GravityHip, ReusesBuffersWhenSizeChanges) {
     check_against_serial(100, 14); // works again after the buffers were freed
 }
 
-TEST(GravityHip, OverwritesPreviousAccelerations) {
+TEST_F(GravityHip, OverwritesPreviousAccelerations) {
     REQUIRE_GPU();
     const SimParams params = test_params();
     Particles serial = random_system(300, 9);
@@ -160,7 +174,7 @@ TEST(GravityHip, OverwritesPreviousAccelerations) {
     expect_matches_serial(gpu, serial, 1e-12);
 }
 
-TEST(GravityHip, DispatcherRoutesHipBackend) {
+TEST_F(GravityHip, DispatcherRoutesHipBackend) {
     REQUIRE_GPU();
     const SimParams params = test_params();
     Particles direct = random_system(200, 13);
@@ -170,7 +184,7 @@ TEST(GravityHip, DispatcherRoutesHipBackend) {
     expect_matches_serial(dispatched, direct, 1e-12);
 }
 
-TEST(GravityHip, FewLeapfrogStepsTrackSerial) {
+TEST_F(GravityHip, FewLeapfrogStepsTrackSerial) {
     REQUIRE_GPU();
     SimParams params = test_params();
     params.dt = 1e-3;
@@ -193,7 +207,7 @@ TEST(GravityHip, FewLeapfrogStepsTrackSerial) {
     }
 }
 
-TEST(GravityHip, SwitchingToHipAndBackMidRunMatches) {
+TEST_F(GravityHip, SwitchingToHipAndBackMidRunMatches) {
     // The viewer's backend keys (#48): serial -> HIP -> serial must track serial
     // throughout, up to rounding. Few steps (gravity is chaotic).
     REQUIRE_GPU();

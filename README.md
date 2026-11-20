@@ -10,19 +10,19 @@ Each planet is a ball of thousands of particles. Every timestep, every particle 
 
 ## Results so far
 
-Gravity for 10,000 particles, one step, measured in the live viewer (Ryzen 5 7600X, Radeon RX 9060 XT):
+One simulation step (all forces plus the integrator), `planet_sim --bench` on a Ryzen 5 7600X and a Radeon RX 9060 XT, in milliseconds:
 
-| Backend | ms per step | Speedup over serial |
-|---|---|---|
-| Serial | 277 | 1x |
-| OpenMP, 12 threads | 47 | 5.9x |
-| GPU, first kernel (double precision) | 28 | 9.9x |
+| | Serial | OpenMP, 6 threads | GPU (float) | GPU vs serial | GPU vs OpenMP |
+|---|---|---|---|---|---|
+| Head-on collision, 4,000 particles | 52.5 | 10.3 | 1.1 | 48x | 9.4x |
+| Cloud, 10,000 particles | 287 | 52.7 | 2.1 | 137x | 25x |
+| Cloud, 50,000 particles | 7,198 | 1,271 | 29 | 248x | 44x |
 
 OpenMP scales almost perfectly up to the 6 physical cores:
 
 ![OpenMP speedup](docs/figures/fig_openmp_speedup.png)
 
-The GPU kernel is still the simple version. This card runs double precision about 13 times slower than single, and timing the kernel alone in single precision gave 2 ms per step at this size, so the float and tiled kernels (#32, #26) should widen the gap a lot. The full history, with screenshots, is in [docs/progress.md](docs/progress.md).
+The GPU computes gravity, contact and heat in one kernel in single precision (`--gpu-precision double` gives the exact reference). Single precision is what makes it fast: this card runs double about 13 times slower. The full history, with screenshots, is in [docs/progress.md](docs/progress.md).
 
 ## Status
 
@@ -114,7 +114,7 @@ cmake --preset demo && cmake --build --preset demo      # Release + GPU + viewer
 ./build/demo/planet_view --scenario cloud --n 10000 --backend omp
 ```
 
-Keys: `1/2/3` backend, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
+Keys: `1/2/3` backend, `p` GPU float/double, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
 
 ### Build presets
 
