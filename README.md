@@ -26,16 +26,15 @@ The GPU kernel is still the simple version. This card runs double precision abou
 
 ## Status
 
-| # | Milestone | Status |
-|---|---|---|
-| 0 | Repo, build system, CI | Done |
-| 1 | Serial two-body orbit (leapfrog, energy conservation) | Done: gravity, leapfrog, planet generation, frame output and a render script |
-| 2 | Serial planet collision + first video | In progress: `planet_sim` loop and CLI, contact forces, scenario files, planet relaxation, first collision video, energy plot and contact heat done; conservation tests and CI smoke run left |
-| 3 | OpenMP backend + speedup graphs | In progress: OpenMP gravity ~6x faster on 6 cores; grid contact done (33x faster than all pairs at 32k particles, one thread); benchmark harness and scheduling comparison left |
-| 4 | GPU backend (HIP on AMD) | In progress: HIP build + CI compile check, naive double-precision GPU gravity done; tiled kernel left |
-| 5 | Grid-based contact, impact scenarios, full benchmarks | Not started (grid contact came early, in M3) |
-| V | Live viewer (`planet_view`) | In progress: 3D window with live serial/OpenMP/GPU switching done; glow look and replay/video export left |
-| 6 | Stretch goals (Barnes-Hut, atomics comparison) + presentation | Not started |
+The first plan ran in milestones M0 to M6 plus the viewer. On Nov 20 we re-planned the last three weeks around what the project has to show: real speedups, a simulation that looks like the giant-impact studies, and the talk.
+
+| Milestone | Status |
+|---|---|
+| M0 to M2: build, CI, serial physics, first collision | Done: gravity, leapfrog, planets with relaxation, soft-sphere contact with heat, scenario files, frame output and video, an energy log that counts every term, conservation tests and a CI smoke collision |
+| Parallel backends so far | Done: OpenMP gravity (~6x on 6 cores), grid contact (33x faster than all pairs at 32k particles), a first GPU kernel, and the live viewer with serial/OpenMP/GPU switching |
+| F1: Fast + measured (Nov 27) | In progress: float + tiled GPU kernel with contact in the kernel, parallel contact, benchmark harness |
+| F2: Showpiece (Dec 6) | Not started: layered planets, Theia-style impact colored by heat and material, Barnes-Hut tree gravity, impact analysis, scaling plots, hero video |
+| F3: Presentation (Dec 10) | Not started: slides, final README and demo video, Q&A rehearsal |
 
 Full plan: [PLAN.md](PLAN.md).
 

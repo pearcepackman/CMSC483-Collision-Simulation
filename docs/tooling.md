@@ -119,7 +119,7 @@ There's little to leak in this project (no API keys). The real risks are an **SS
 
 ### Branch protection
 
-**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan`, `hip-compile` (added Oct 30, PR #51) and `viewer` (added Oct 30, PR #52). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. `render` (which now includes the smoke collision, #17) should be added to the required list (repo Settings → Branches, or `gh api -X PUT repos/{owner}/{repo}/branches/main/protection`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
+**On (Oct 2026):** `main` only accepts changes whose CI passed. Required checks: `format`, `build-test (g++)`, `build-test (clang++)`, `asan`, `tsan`, `hip-compile` (added Oct 30, PR #51), `viewer` (added Oct 30, PR #52) and `render` (added Nov 20, PR #65; it includes the smoke collision). It applies to admins too (no "merge anyway" override). No review approvals are required (team decision: only CI gates merging). Force-pushes to and deletion of `main` are blocked. New jobs go on the required list once they're green (repo Settings → Branches, or `gh api -X PATCH repos/{owner}/{repo}/branches/main/protection/required_status_checks`). Emergency: an admin can temporarily turn protection off in Settings → Branches.
 
 ---
 
