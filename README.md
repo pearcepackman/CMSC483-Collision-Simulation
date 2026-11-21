@@ -6,7 +6,7 @@ Smash two particle-based planets together and use parallel computing to make an 
 
 Each planet is a ball of thousands of particles. Every timestep, every particle pulls on every other one (gravity), overlapping particles push apart and lose energy (soft-sphere contact), and a leapfrog integrator advances positions and velocities. The same simulation runs on three swappable backends, **serial**, **OpenMP** (CPU threads) and **HIP** (AMD GPU), so we can measure exactly how much each one speeds things up.
 
-![Live viewer: 10,000 particles on the GPU](docs/media/viewer_10k_hip.png)
+![A quarter-mass planet hitting at three times escape speed, colored by heat, in the live viewer](docs/media/viewer_smash_debris_heat.png)
 
 ## Results so far
 
@@ -32,8 +32,8 @@ The first plan ran in milestones M0 to M6 plus the viewer. On Nov 20 we re-plann
 |---|---|
 | M0 to M2: build, CI, serial physics, first collision | Done: gravity, leapfrog, planets with relaxation, soft-sphere contact with heat, scenario files, frame output and video, an energy log that counts every term, conservation tests and a CI smoke collision |
 | Parallel backends so far | Done: OpenMP gravity (~6x on 6 cores), grid contact (33x faster than all pairs at 32k particles), a first GPU kernel, and the live viewer with serial/OpenMP/GPU switching |
-| F1: Fast + measured (Nov 27) | In progress: float + tiled GPU kernel with contact in the kernel, parallel contact, benchmark harness |
-| F2: Showpiece (Dec 6) | Not started: layered planets, Theia-style impact colored by heat and material, Barnes-Hut tree gravity, impact analysis, scaling plots, hero video |
+| F1: Fast + measured (Nov 27) | In progress. Done: float + tiled GPU kernel with contact and heat in the kernel (1.1 ms per step at 4,000 particles vs 52.5 ms serial). Left: parallel grid contact with OpenMP, benchmark harness |
+| F2: Showpiece (Dec 6) | In progress. Done: layered planets with iron cores, the glow viewer with heat and material colors. Left: Theia-style impact, Barnes-Hut tree gravity, impact analysis, scaling plots, hero video |
 | F3: Presentation (Dec 10) | Not started: slides, final README and demo video, Q&A rehearsal |
 
 Full plan: [PLAN.md](PLAN.md).
@@ -111,10 +111,11 @@ Watch it live: `planet_view` opens a 3D window running the same simulation. Pres
 
 ```bash
 cmake --preset demo && cmake --build --preset demo      # Release + GPU + viewer (no GPU? use the viewer preset)
+./build/demo/planet_view --config configs/smash.cfg --backend hip   # the destruction run
 ./build/demo/planet_view --scenario cloud --n 10000 --backend omp
 ```
 
-Keys: `1/2/3` backend, `p` GPU float/double, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
+Keys: `1/2/3` backend, `p` GPU float/double, `c` color (heat, material, planet, speed, plain), `b` bloom, `t` trails, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one; `--color MODE`, `--no-bloom` and `--trails` set the look at start. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
 
 ### Build presets
 
@@ -147,7 +148,7 @@ viewer/     planet_view, the live 3D window (raylib)
 tests/      GoogleTest suites: physics correctness and backend agreement
 docs/       progress log with screenshots, design notes, tooling decisions, kickstart guide
 scripts/    render.py (frames to video), plot_energy.py (energy plot) and their tests; benchmark scripts [coming]
-configs/    impact scenarios: head_on.cfg, smoke.cfg (CI); grazing and Theia-like [coming]
+configs/    impact scenarios: head_on.cfg, smash.cfg, smoke.cfg (CI); grazing and Theia-like [coming]
 bench/      micro-benchmarks (bench_gravity, bench_contact) and committed results
 ```
 
