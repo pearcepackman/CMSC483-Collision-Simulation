@@ -16,13 +16,21 @@ except ImportError:
     imageio_ffmpeg = None
 
 
+H = "id,x,y,z,vx,vy,vz,mass,body,material,heat\n"
+
+
+def row(i, x, y, z, body):
+    """One frame row as planet_sim writes it (velocities 0, mass 1, rock, no heat)."""
+    return "%d,%.17g,%.17g,%.17g,0,0,0,1,%d,0,0\n" % (i, x, y, z, body)
+
+
 def write_frame(folder, number, rows):
-    """Writes a frame the way planet_sim's write_frame() does: header, then id,x,y,z,body."""
+    """Writes a frame the way planet_sim's write_frame() does: header, then one row each."""
     path = os.path.join(folder, "frame_%05d.csv" % number)
     with open(path, "w", newline="\n") as f:
-        f.write("id,x,y,z,body\n")
+        f.write(H)
         for i, (x, y, z, body) in enumerate(rows):
-            f.write("%d,%.17g,%.17g,%.17g,%d\n" % (i, x, y, z, body))
+            f.write(row(i, x, y, z, body))
     return path
 
 
@@ -57,10 +65,11 @@ class RenderTest(unittest.TestCase):
 
     def test_loads_what_read_frame_accepts(self):
         # The C++ reader (src/io.cpp) accepts these, so the script must too.
+        rows = row(0, 1.5, -2, 3, 1) + row(1, 0, 0, 0, 0)
         good = {
-            "crlf.csv": "id,x,y,z,body\r\n0,1.5,-2,3,1\r\n1,0,0,0,0\r\n",
-            "no_final_newline.csv": "id,x,y,z,body\n0,1.5,-2,3,1\n1,0,0,0,0",
-            "one_blank_line_at_end.csv": "id,x,y,z,body\n0,1.5,-2,3,1\n1,0,0,0,0\n\n",
+            "crlf.csv": (H + rows).replace("\n", "\r\n"),
+            "no_final_newline.csv": (H + rows).rstrip("\n"),
+            "one_blank_line_at_end.csv": H + rows + "\n",
         }
         for name, text in good.items():
             xyz, body = render.load_frame(self.write_text(name, text))
@@ -73,23 +82,32 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(xyz[0, 1], float("inf"))
 
     def test_rejects_malformed(self):
+        r0, r1 = row(0, 1, 2, 3, 0), row(1, 1, 2, 3, 0)
         bad = {
             "empty.csv": "",
-            "header.csv": "id,x,y,z,mass\n0,1,2,3,0\n",
-            "columns.csv": "id,x,y,z,body\n0,1,2,3\n",
-            "ids.csv": "id,x,y,z,body\n0,1,2,3,0\n2,1,2,3,0\n",
-            "number.csv": "id,x,y,z,body\n0,1,abc,3,0\n",
-            "body.csv": "id,x,y,z,body\n0,1,2,3,0.5\n",
+            "header.csv": "id,x,y,z,vx,vy,vz,mass,body,material,heet\n" + r0,
+            "columns.csv": H + "0,1,2,3,0,0,0,1,0,0\n",
+            "ids.csv": H + r0 + row(2, 1, 2, 3, 0),
+            "number.csv": H + "0,1,abc,3,0,0,0,1,0,0,0\n",
+            "body.csv": H + "0,1,2,3,0,0,0,1,0.5,0,0\n",
+            "material.csv": H + "0,1,2,3,0,0,0,1,0,0.5,0\n",
             # Rejected by read_frame too: a hand-edited frame should fail, not render.
-            "comment.csv": "id,x,y,z,body\n# edited\n0,1,2,3,0\n",
-            "blank_middle.csv": "id,x,y,z,body\n0,1,2,3,0\n\n1,1,2,3,0\n",
-            "two_blank_at_end.csv": "id,x,y,z,body\n0,1,2,3,0\n\n\n",
+            "comment.csv": H + "# edited\n" + r0,
+            "blank_middle.csv": H + r0 + "\n" + r1,
+            "two_blank_at_end.csv": H + r0 + "\n\n",
         }
         for name, text in bad.items():
             path = self.write_text(name, text)
             with self.assertRaises(ValueError, msg=name) as caught:
                 render.load_frame(path)
             self.assertIn(name, str(caught.exception))  # the message says which file
+
+    def test_old_frames_say_to_rerun(self):
+        path = self.write_text("old.csv", "id,x,y,z,body\n0,1,2,3,0\n")
+        with self.assertRaises(ValueError) as caught:
+            render.load_frame(path)
+        self.assertIn("rerun planet_sim", str(caught.exception))
+        self.assertIn("old.csv", str(caught.exception))
 
     def test_frames_sorted_by_number(self):
         for n in [100000, 2, 99999, 10]:

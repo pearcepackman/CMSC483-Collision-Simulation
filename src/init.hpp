@@ -9,7 +9,13 @@ struct PlanetSpec {
     int n = 0;                    // particle count
     double radius = 0.0;          // planet radius
     double particle_radius = 0.0; // radius of each particle
-    double mass = 0.0;            // total planet mass, split evenly across particles
+    double mass = 0.0;            // total planet mass (all particles together)
+    // Layered planets (#50): particles whose lattice position is within
+    // core_radius_fraction of the radius the particle centers fill are iron core, the
+    // rest rock mantle. Same particle size; core particles are core_density_ratio times
+    // heavier. 0 / 1 (the defaults) = no core: every particle has mass / n, as before.
+    double core_radius_fraction = 0.0; // in [0, 1)
+    double core_density_ratio = 1.0;   // >= 1 (iron is about 2.5x denser than rock)
     Vec3 center = {0.0, 0.0, 0.0};
     Vec3 velocity = {0.0, 0.0, 0.0};
     unsigned seed = 0; // same seed -> identical planet
@@ -24,6 +30,12 @@ void make_planet(Particles &p, const PlanetSpec &spec);
 // reason, e.g. "too many particles for this radius and particle_radius". Lets callers
 // such as load_config report a bad spec cleanly instead of aborting.
 bool planet_spec_ok(const PlanetSpec &spec, const char **why);
+
+// Particle masses make_planet will use for spec: how many particles are core, and the
+// mass of one core and one mantle particle (equal without a core). Returns false if
+// spec is invalid (see planet_spec_ok). Used for the damper-stability note, which needs
+// the lightest particle.
+bool planet_particle_masses(const PlanetSpec &spec, int *n_core, double *m_core, double *m_mantle);
 
 // What relax_planet did.
 struct RelaxResult {

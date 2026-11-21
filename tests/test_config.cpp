@@ -297,6 +297,30 @@ TEST(Config, PlanetsMakePlanetCantBuildFail) {
                     "planet1: mass must be > 0");
 }
 
+TEST(Config, CoreKeysLoadAndAreChecked) {
+    // Layered planets (#50): both keys per planet, defaults (no core) when absent.
+    Config cfg;
+    bool ok = false;
+    std::string err = load_text(std::string(kMinimal) + "planet0.core_radius_fraction = 0.55\n"
+                                                        "planet0.core_density_ratio = 2.5\n",
+                                cfg, &ok);
+    ASSERT_TRUE(ok) << err;
+    ASSERT_EQ(cfg.planets.size(), 1u);
+    EXPECT_EQ(cfg.planets[0].core_radius_fraction, 0.55);
+    EXPECT_EQ(cfg.planets[0].core_density_ratio, 2.5);
+    Config plain;
+    ASSERT_TRUE((load_text(kMinimal, plain, &ok), ok));
+    EXPECT_EQ(plain.planets[0].core_radius_fraction, 0.0);
+    EXPECT_EQ(plain.planets[0].core_density_ratio, 1.0);
+
+    expect_rejected(std::string(kMinimal) + "planet0.core_radius_fraction = 1\n",
+                    "planet0: core_radius_fraction must be >= 0 and < 1");
+    expect_rejected(std::string(kMinimal) + "planet0.core_density_ratio = 0.5\n",
+                    "planet0: core_density_ratio must be finite and >= 1");
+    expect_rejected(std::string(kMinimal) + "planet0.core_density_ratio = heavy\n",
+                    "core_density_ratio");
+}
+
 TEST(Config, BadRunSettingsFail) {
     const std::string m = kMinimal;
     expect_rejected(m + "softening = -0.05\n", "softening must be >= 0");

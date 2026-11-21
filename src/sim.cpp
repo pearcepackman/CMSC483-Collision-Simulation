@@ -110,6 +110,7 @@ void place_planet(Particles &dst, const Particles &planet, Vec3 center, Vec3 vel
         dst.mass[base + i] = planet.mass[i];
         dst.radius[base + i] = planet.radius[i];
         dst.body[base + i] = planet.body[i];
+        dst.material[base + i] = planet.material[i];
         dst.heat[base + i] = planet.heat[i]; // heat_rate isn't copied: sim_init recomputes it
     }
 }
@@ -127,7 +128,13 @@ static void note_strong_damper(const Config &cfg) {
         if (spec.n <= 0) {
             continue; // make_planet rejects it; nothing to divide by here
         }
-        double m = spec.mass / static_cast<double>(spec.n);
+        // The lightest particle: a mantle particle if the planet has a core (#50).
+        int n_core = 0;
+        double m_core = 0.0, m_mantle = 0.0;
+        if (!planet_particle_masses(spec, &n_core, &m_core, &m_mantle)) {
+            continue; // make_planet reports the bad spec
+        }
+        double m = n_core < spec.n ? m_mantle : m_core;
         if (m_min == 0.0 || m < m_min) {
             m_min = m;
         }
@@ -145,8 +152,27 @@ static void note_strong_damper(const Config &cfg) {
     }
 }
 
+// A core of only a few particles (a small core_radius_fraction, or few particles) is a
+// "layered" planet in name only: say so. 13 is the center point plus its 12 nearest
+// neighbors, the first full shell of the lattice.
+static void note_tiny_core(const Config &cfg) {
+    for (const PlanetSpec &spec : cfg.planets) {
+        int n_core = 0;
+        double m_core = 0.0, m_mantle = 0.0;
+        if (spec.core_radius_fraction > 0.0 &&
+            planet_particle_masses(spec, &n_core, &m_core, &m_mantle) && n_core < 13) {
+            std::fprintf(stderr,
+                         "note: planet%d's core_radius_fraction = %g gives only %d core "
+                         "particle(s) out of %d; raise core_radius_fraction or n for a real "
+                         "core\n",
+                         spec.body, spec.core_radius_fraction, n_core, spec.n);
+        }
+    }
+}
+
 Particles build_planets(const Config &cfg, Backend backend) {
     note_strong_damper(cfg);
+    note_tiny_core(cfg);
     Particles all;
     for (const PlanetSpec &spec : cfg.planets) {
         PlanetSpec at_rest = spec; // generate and relax at the origin, not moving

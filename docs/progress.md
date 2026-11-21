@@ -185,3 +185,7 @@ Float has one trap. Far from the origin, float positions are too coarse for the 
 |---|---|
 | ![50k](media/viewer_50k_gpu_float.png) | ![impact](media/viewer_head_on_impact_gpu.png) |
 
+## Nov 20: Layered planets (#50)
+
+Planets can now have an iron core inside a rock mantle, like the planets in the giant-impact papers. Every particle stays the same size and the core particles are 2.5 times heavier, so the core of a 2,000-particle planet holds 32% of its mass, about the same as Earth's. After relaxation the core stays in the middle. Each particle also records its material, and the frame files now hold velocities, mass, material and heat too, so the impact analysis (#67) and the replay (#49) can use them. The viewer's material coloring comes with the glow look (#47).
+

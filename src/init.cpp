@@ -98,9 +98,12 @@ static double uniform_pm1(std::mt19937_64 &rng) {
 // planet) and the scale from lattice units to distance.
 struct PlanetLayout {
     std::vector<LatticePoint> pts;
-    double mx = 0.0, my = 0.0, mz = 0.0;
+    std::vector<char> core; // per point: 1 if it is iron core
+    int n_core = 0;
+    double mx = 0.0, my = 0.0, mz = 0.0; // mass-weighted mean, subtracted to center
     double half_side = 0.0;
     double jitter = 0.0;
+    double m_core = 0.0, m_mantle = 0.0; // one particle's mass
 };
 
 // Checks spec and, if it's usable, fills *layout. Returns nullptr on success or the
@@ -113,6 +116,12 @@ static const char *layout_planet(const PlanetSpec &spec, PlanetLayout *layout) {
     if (!std::isfinite(spec.radius) || !std::isfinite(spec.particle_radius) ||
         !std::isfinite(spec.mass) || spec.particle_radius < 0.0 || spec.mass < 0.0) {
         return "radius, particle_radius and mass must be finite and >= 0";
+    }
+    if (!(spec.core_radius_fraction >= 0.0 && spec.core_radius_fraction < 1.0)) {
+        return "core_radius_fraction must be >= 0 and < 1";
+    }
+    if (!(spec.core_density_ratio >= 1.0) || !std::isfinite(spec.core_density_ratio)) {
+        return "core_density_ratio must be finite and >= 1";
     }
     if (spec.n == 0) {
         return nullptr;
@@ -135,17 +144,46 @@ static const char *layout_planet(const PlanetSpec &spec, PlanetLayout *layout) {
     std::vector<LatticePoint> pts = closest_fcc_points(spec.n);
     const std::size_t n = pts.size();
 
-    // Center the points on their mean. The outer shell is usually only partly filled,
-    // so without this the planet's center of mass would sit off spec.center.
-    long long sx = 0, sy = 0, sz = 0;
-    for (std::size_t i = 0; i < n; ++i) {
-        sx += pts[i].ix;
-        sy += pts[i].iy;
-        sz += pts[i].iz;
+    // The core (#50): whole shells of the lattice around its origin, so it is
+    // symmetric and centered, out to core_radius_fraction of the ball the points fill
+    // (whose squared radius in lattice units is the farthest point's key). Keys are
+    // exact integers and the threshold is one IEEE product, so the choice is the same on
+    // every machine; an f that lands exactly on a shell's boundary could round either
+    // way, which only matters for hand-picked values.
+    std::vector<char> core(n, 0);
+    int n_core = 0;
+    if (spec.core_radius_fraction > 0.0) {
+        const double f = spec.core_radius_fraction;
+        const double max_key = f * f * static_cast<double>(pts[n - 1].key);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (static_cast<double>(pts[i].key) <= max_key) {
+                core[i] = 1;
+                ++n_core;
+            }
+        }
     }
-    const double mx = static_cast<double>(sx) / spec.n;
-    const double my = static_cast<double>(sy) / spec.n;
-    const double mz = static_cast<double>(sz) / spec.n;
+    const int n_mantle = spec.n - n_core;
+    const double ratio = spec.core_density_ratio;
+    const double m_mantle = spec.mass / (n_mantle + ratio * n_core); // total stays mass
+    const double m_core = ratio * m_mantle;
+
+    // Center the points on their mass-weighted mean, so the planet's center of mass is
+    // at spec.center (the outer shell is usually only partly filled, so the plain mean
+    // isn't the origin). Integer sums per material are exact; with no core this is
+    // exactly the plain mean sx / n, as before.
+    long long sx_m = 0, sy_m = 0, sz_m = 0, sx_c = 0, sy_c = 0, sz_c = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        long long *sx = core[i] ? &sx_c : &sx_m;
+        long long *sy = core[i] ? &sy_c : &sy_m;
+        long long *sz = core[i] ? &sz_c : &sz_m;
+        *sx += pts[i].ix;
+        *sy += pts[i].iy;
+        *sz += pts[i].iz;
+    }
+    const double weight = n_mantle + ratio * n_core;
+    const double mx = (static_cast<double>(sx_m) + ratio * static_cast<double>(sx_c)) / weight;
+    const double my = (static_cast<double>(sy_m) + ratio * static_cast<double>(sy_c)) / weight;
+    const double mz = (static_cast<double>(sz_m) + ratio * static_cast<double>(sz_c)) / weight;
     double extent = 0.0; // farthest centered point, in half cube sides
     for (std::size_t i = 0; i < n; ++i) {
         double dx = pts[i].ix - mx;
@@ -167,6 +205,10 @@ static const char *layout_planet(const PlanetSpec &spec, PlanetLayout *layout) {
     }
 
     layout->pts = pts;
+    layout->core = core;
+    layout->n_core = n_core;
+    layout->m_core = m_core;
+    layout->m_mantle = m_mantle;
     layout->mx = mx;
     layout->my = my;
     layout->mz = mz;
@@ -182,6 +224,17 @@ bool planet_spec_ok(const PlanetSpec &spec, const char **why) {
         *why = err;
     }
     return err == nullptr;
+}
+
+bool planet_particle_masses(const PlanetSpec &spec, int *n_core, double *m_core, double *m_mantle) {
+    PlanetLayout layout;
+    if (layout_planet(spec, &layout) != nullptr) {
+        return false;
+    }
+    *n_core = layout.n_core;
+    *m_core = layout.m_core;
+    *m_mantle = layout.m_mantle;
+    return true;
 }
 
 void make_planet(Particles &p, const PlanetSpec &spec) {
@@ -216,9 +269,10 @@ void make_planet(Particles &p, const PlanetSpec &spec) {
         p.vx[base + i] = spec.velocity.x;
         p.vy[base + i] = spec.velocity.y;
         p.vz[base + i] = spec.velocity.z;
-        p.mass[base + i] = spec.mass / spec.n;
+        p.mass[base + i] = layout.core[i] ? layout.m_core : layout.m_mantle;
         p.radius[base + i] = pr;
         p.body[base + i] = spec.body;
+        p.material[base + i] = layout.core[i] ? MATERIAL_IRON : MATERIAL_ROCK;
     }
 }
 
