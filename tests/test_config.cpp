@@ -361,7 +361,7 @@ TEST(Config, MissingFileFails) {
 
 // The real scenario files must keep loading as the format and the code change.
 TEST(Config, ShippedConfigsLoad) {
-    const char *files[] = {"head_on.cfg", "smoke.cfg"};
+    const char *files[] = {"head_on.cfg", "smoke.cfg", "smash.cfg"};
     for (const char *name : files) {
         SCOPED_TRACE(name);
         std::string path = std::string(SIM_SOURCE_DIR) + "/configs/" + name;

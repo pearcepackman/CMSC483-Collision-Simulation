@@ -172,6 +172,16 @@ if(ENABLE_VIEWER)
     add_cli_test(Viewer.RejectsEmptyScreenshotName 1 PROGRAM planet_view
         ARGS --scenario cloud --screenshot ""
         OUTPUT "--screenshot needs a .png file name, got ''")
+    add_cli_test(Viewer.RejectsUnknownColorMode 1 PROGRAM planet_view
+        ARGS --scenario cloud --color rainbow
+        OUTPUT "--color needs heat, material, planet, speed or plain, got 'rainbow'")
+    add_cli_test(Viewer.RejectsMissingColorMode 1 PROGRAM planet_view
+        ARGS --scenario cloud --color
+        OUTPUT "--color needs heat, material, planet, speed or plain, got ''")
+    # The look flags parse; the unknown scenario then stops it before any window opens.
+    add_cli_test(Viewer.AcceptsLookFlags 1 PROGRAM planet_view
+        ARGS --color material --no-bloom --trails --scenario nope
+        OUTPUT "unknown scenario 'nope'")
     add_cli_test(Viewer.UnknownScenarioIsSetupError 1 PROGRAM planet_view
         ARGS --scenario nope
         OUTPUT "unknown scenario 'nope'")

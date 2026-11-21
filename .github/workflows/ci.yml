@@ -112,14 +112,25 @@ jobs:
       - run: cmake --build --preset viewer
       - name: Test planet_view's argument checks (build-test runs the rest)
         run: ctest --preset viewer -R '^Viewer\.'
-      - name: Run planet_view for 60 frames on a virtual screen
+      # Two planets with contact (smoke.cfg), drawn in the default glow look and in plain
+      # mode. Both must run and write a PNG, the glow shaders must compile (software
+      # OpenGL here), and the pictures must differ the right way: plain is flat squares of
+      # one color, glow is soft sprites that add up (.github/ci/png_stats.py, #47).
+      - name: Run planet_view for 60 frames on a virtual screen, glow and plain
         run: |
-          xvfb-run -a -s "-screen 0 1280x800x24" \
-            ./build/viewer/planet_view --scenario cloud --n 300 --backend omp --frames 60 \
-            --screenshot viewer.png
-          # --screenshot must really write a PNG (the upload below ignores a missing file).
-          test -s viewer.png && head -c 8 viewer.png | od -An -c | grep -q 'P   N   G' \
-            || { echo "viewer.png missing or not a PNG"; exit 1; }
+          for look in glow plain; do
+            extra=""
+            if [ "$look" = plain ]; then extra="--color plain --no-bloom"; fi
+            xvfb-run -a -s "-screen 0 1280x800x24" \
+              ./build/viewer/planet_view --config configs/smoke.cfg --backend omp --frames 60 \
+              $extra --screenshot viewer_$look.png 2>&1 | tee viewer_$look.log
+            test "${PIPESTATUS[0]}" -eq 0 || { echo "planet_view ($look) failed"; exit 1; }
+            # --screenshot must really write a PNG (the upload below ignores a missing file).
+            test -s viewer_$look.png && head -c 8 viewer_$look.png | od -An -c | grep -q 'P   N   G' \
+              || { echo "viewer_$look.png missing or not a PNG"; exit 1; }
+            if grep -q "bloom disabled" viewer_$look.log; then echo "glow shaders failed"; exit 1; fi
+          done
+          python3 .github/ci/png_stats.py viewer_glow.png viewer_plain.png
       - name: A simulation that blows up must exit 2, as planet_sim does
         run: |
           set +e
@@ -131,7 +142,9 @@ jobs:
         if: always()
         with:
           name: viewer-screenshot
-          path: viewer.png
+          path: |
+            viewer_glow.png
+            viewer_plain.png
           if-no-files-found: ignore
 
   # Quick-look render script (#11). Runs its unit tests, then renders real planet_sim

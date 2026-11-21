@@ -189,3 +189,13 @@ Float has one trap. Far from the origin, float positions are too coarse for the 
 
 Planets can now have an iron core inside a rock mantle, like the planets in the giant-impact papers. Every particle stays the same size and the core particles are 2.5 times heavier, so the core of a 2,000-particle planet holds 32% of its mass, about the same as Earth's. After relaxation the core stays in the middle. Each particle also records its material, and the frame files now hold velocities, mass, material and heat too, so the impact analysis (#67) and the replay (#49) can use them. The viewer's material coloring comes with the glow look (#47).
 
+## Nov 21: The glow look (#47)
+
+The viewer now looks like the giant-impact simulations it is modeled on. Particles are soft glowing dots whose light adds up, drawn at their real size, so dense regions glow brighter and debris stays faint at any zoom. The default coloring shows heat on top of material: cold planets show their iron cores inside their rock mantles, and particles glow from dark red to white as collisions heat them. We also added the destruction run, `configs/smash.cfg`: a quarter-mass planet hitting at three times escape speed.
+
+| Before impact (material): iron cores in rock mantles | t = 0.9, impact (heat) | t = 3.0, the debris jet (heat) |
+|---|---|---|
+| ![layers](media/viewer_smash_layers_material.png) | ![impact](media/viewer_smash_impact_heat.png) | ![debris](media/viewer_smash_debris_heat.png) |
+
+All three are the live viewer on the GPU at 60 fps (10,000 particles, 2.8 to 3.5 ms per step). Three details mattered. The picture is built in a texture with floating-point channels, because in ordinary 8-bit channels the many overlapping particles in a cold planet's core added up to white, which in this coloring means white-hot. Brightness is compressed in a way that keeps each color's hue, which is what lets the orange planet's core stay visible. And hot particles give off more light than cold ones, so the hottest flying debris glows white instead of a dull gray. Drawing 50,000 particles costs about 3 ms a frame, so the frame rate is set by the physics, not the drawing.
+
