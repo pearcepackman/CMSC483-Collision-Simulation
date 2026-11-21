@@ -173,6 +173,10 @@ KeyResult set_planet_key(const std::string &field, const std::string &val, Plane
         ok = parse_vec3(val, &s->velocity);
     } else if (field == "seed") {
         ok = parse_unsigned(val, &s->seed);
+    } else if (field == "core_radius_fraction") {
+        ok = parse_double(val, &s->core_radius_fraction);
+    } else if (field == "core_density_ratio") {
+        ok = parse_double(val, &s->core_density_ratio);
     } else {
         return KEY_UNKNOWN;
     }

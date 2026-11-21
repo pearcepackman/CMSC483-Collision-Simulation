@@ -111,7 +111,7 @@ Relaxation, `#15`: `compute_accelerations()` once, then loop `leapfrog_step()` +
 ## 5. Per-issue notes
 
 - #9 planets: "same seed gives identical output": `std::mt19937` is identical everywhere, but `std::uniform_real_distribution` can differ between standard libraries (gcc vs clang/macOS). Fine for tests on one machine; if results must match across machines, map the raw `mt19937` output to `[0,1)` yourself. Test "max initial overlap < 10% of particle radius" is cheap: check every pair for small N.
-- #10 frames: one CSV per frame, `frame_00042.csv`, columns `id,x,y,z,body`. Round-trip test: write, `read_frame`, compare. With `%.17g` the values come back bit-identical.
+- #10 frames: one CSV per frame, `frame_00042.csv`, columns `id,x,y,z,body` (since #50: `id,x,y,z,vx,vy,vz,mass,body,material,heat`). Round-trip test: write, `read_frame`, compare. With `%.17g` the values come back bit-identical.
 - #11 render: matplotlib 3D scatter → PNGs → ffmpeg (both installed on Pearce's machine). Color by `body`. `matplotlib.animation.FFMpegWriter` writes an MP4 directly without temporary PNGs. Pin versions in `scripts/requirements.txt`.
 - #12 contact: tests from the issue: separated → zero force; overlapping → repulsive, equal and opposite; head-on bounce loses energy with damping, keeps it without. Check `+=` (contract above). The O(N²) brute force is expected here; the grid comes in #23.
 - #13 config: `key = value`, unknown key → `false` + the offending line. Planets need a numbered or sectioned syntax (`planet0.radius = 1.0`?); decide in `/plan-issue 13`.

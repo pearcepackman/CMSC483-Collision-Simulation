@@ -16,7 +16,11 @@ import time
 
 import numpy as np
 
-HEADER = "id,x,y,z,body"  # what planet_sim's write_frame() writes (src/io.cpp)
+# What planet_sim's write_frame() writes (src/io.cpp). Since #50 a frame also has
+# velocities, mass, material and heat; this script only needs positions and body.
+HEADER = "id,x,y,z,vx,vy,vz,mass,body,material,heat"
+COLUMNS = HEADER.split(",")
+OLD_HEADER = "id,x,y,z,body"  # frames written before #50
 FRAME_NAME = re.compile(r"^frame_(\d+)\.csv$")
 
 
@@ -37,6 +41,9 @@ def load_frame(path):
     with open(path, newline="") as f:
         header = f.readline().rstrip("\r\n")
         rows = f.read().splitlines()  # handles \n and \r\n
+    if header == OLD_HEADER:
+        raise ValueError(f"{path}: written by planet_sim before the frame format changed "
+                         f"(#50); rerun planet_sim to get frames this script can read")
     if header != HEADER:
         raise ValueError(f"{path}: expected header '{HEADER}', got '{header}'")
     if rows and rows[-1] == "":
@@ -50,13 +57,14 @@ def load_frame(path):
         data = np.loadtxt(rows, delimiter=",", ndmin=2, comments=None)
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from None
-    if data.shape[1] != 5:
-        raise ValueError(f"{path}: expected 5 columns, got {data.shape[1]}")
+    if data.shape[1] != len(COLUMNS):
+        raise ValueError(f"{path}: expected {len(COLUMNS)} columns, got {data.shape[1]}")
     if not np.array_equal(data[:, 0], np.arange(len(data))):
         raise ValueError(f"{path}: ids are not 0, 1, 2, ... in order")
-    body = data[:, 4]
-    if not np.all(body == np.round(body)):
-        raise ValueError(f"{path}: body ids must be whole numbers")
+    body = data[:, COLUMNS.index("body")]
+    material = data[:, COLUMNS.index("material")]
+    if not np.all(body == np.round(body)) or not np.all(material == np.round(material)):
+        raise ValueError(f"{path}: body and material must be whole numbers")
     return data[:, 1:4], body.astype(int)
 
 

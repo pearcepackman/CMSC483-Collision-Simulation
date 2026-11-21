@@ -3,6 +3,10 @@
 #include <cstddef>
 #include <vector>
 
+// Particles::material values: a planet's mantle and its (optional) core.
+const int MATERIAL_ROCK = 0;
+const int MATERIAL_IRON = 1;
+
 struct Vec3 {
     double x, y, z;
 };
@@ -16,7 +20,8 @@ struct Particles {
     std::vector<double> ax, ay, az; // acceleration from the last force evaluation
     std::vector<double> mass;
     std::vector<double> radius;
-    std::vector<int> body; // which planet the particle started in (for coloring)
+    std::vector<int> body;     // which planet the particle started in (for coloring)
+    std::vector<int> material; // MATERIAL_ROCK or MATERIAL_IRON (layered planets, #50)
     // Energy the contact dampers have turned into heat in this particle (energy units,
     // not per mass), and the rate it was heating at in the last force evaluation.
     // compute_accelerations() sets heat_rate; leapfrog_step() adds heat_rate * dt to heat
@@ -33,5 +38,6 @@ struct Particles {
             field->resize(n, 0.0);
         }
         body.resize(n, 0);
+        material.resize(n, MATERIAL_ROCK);
     }
 };
