@@ -38,6 +38,16 @@ def list_frames(folder):
 def load_frame(path):
     """Reads one frame. Returns (xyz, body): an (n, 3) float array and an (n,) int array.
     Raises ValueError, naming the file, if it isn't in write_frame()'s format."""
+    frame = read_frame(path)
+    return frame["x"], frame["body"]
+
+
+def read_frame(path):
+    """Reads one frame with every column: a dict with "x" and "v" ((n, 3) float arrays),
+    "mass" and "heat" ((n,) floats), "body" and "material" ((n,) ints). Non-finite
+    numbers are passed through (a blown-up run still renders); callers that can't use
+    them check for them. Raises ValueError, naming the file, if it isn't in
+    write_frame()'s format."""
     with open(path, newline="") as f:
         header = f.readline().rstrip("\r\n")
         rows = f.read().splitlines()  # handles \n and \r\n
@@ -47,13 +57,14 @@ def load_frame(path):
     if header != HEADER:
         raise ValueError(f"{path}: expected header '{HEADER}', got '{header}'")
     if rows and rows[-1] == "":
-        rows.pop()  # one blank line at the end is fine (read_frame allows it too)
+        rows.pop()  # one blank line at the end is fine (src/io.cpp's read_frame allows it too)
     if "" in rows:
         raise ValueError(f"{path}: blank line in the middle of the frame")
     if not rows:
-        return np.zeros((0, 3)), np.zeros(0, dtype=int)
+        data = np.zeros((0, len(COLUMNS)))
+        return frame_dict(data)
     try:
-        # comments=None: a '#' line is an error, as in read_frame, not something to skip.
+        # comments=None: a '#' line is an error, as in the C++ read_frame, not something to skip.
         data = np.loadtxt(rows, delimiter=",", ndmin=2, comments=None)
     except ValueError as e:
         raise ValueError(f"{path}: {e}") from None
@@ -65,7 +76,20 @@ def load_frame(path):
     material = data[:, COLUMNS.index("material")]
     if not np.all(body == np.round(body)) or not np.all(material == np.round(material)):
         raise ValueError(f"{path}: body and material must be whole numbers")
-    return data[:, 1:4], body.astype(int)
+    return frame_dict(data)
+
+
+def frame_dict(data):
+    """Splits a frame's (n, 11) array into named columns."""
+    col = COLUMNS.index
+    return {
+        "x": data[:, 1:4],
+        "v": data[:, 4:7],
+        "mass": data[:, col("mass")],
+        "body": data[:, col("body")].astype(int),
+        "material": data[:, col("material")].astype(int),
+        "heat": data[:, col("heat")],
+    }
 
 
 def bounds(paths):

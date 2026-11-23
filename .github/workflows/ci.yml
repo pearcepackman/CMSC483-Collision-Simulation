@@ -188,6 +188,15 @@ jobs:
           ./build/dev/planet_sim --config configs/smoke.cfg --out smoke
           python scripts/plot_energy.py smoke/energy.csv -o smoke_energy.png \
             --title "CI smoke collision" --max-rise 2e-4 --max-drift 4e-4
+      # Impact analysis (#67) of the same run. The two small planets merge completely:
+      # measured, the remnant holds 50% of the mass before contact and 100% at the end.
+      # Under 90% at the end means the finder includes too little (only one planet, or
+      # shrank to the center); far from 50% at the start means it includes too much
+      # (both planets while they are still apart).
+      - name: Impact analysis of the smoke collision (50% remnant at the start, >= 90% at the end)
+        run: |
+          python scripts/analyze_impact.py smoke --every 5 -o smoke_impact --min-remnant 0.9
+          python -c "import csv; r = list(csv.DictReader(open('smoke_impact.csv'))); f = float(r[0]['remnant']); print('remnant at the start:', f); assert abs(f - 0.5) < 0.05"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -197,6 +206,8 @@ jobs:
             cloud.png
             energy.png
             smoke_energy.png
+            smoke_impact.png
+            smoke_impact.csv
           if-no-files-found: ignore
 
   # HIP GPU backend (#24). GitHub's runners have no GPU, so this compiles the HIP code
