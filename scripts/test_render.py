@@ -16,12 +16,12 @@ except ImportError:
     imageio_ffmpeg = None
 
 
-H = "id,x,y,z,vx,vy,vz,mass,body,material,heat\n"
+H = "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat\n"
 
 
 def row(i, x, y, z, body):
     """One frame row as planet_sim writes it (velocities 0, mass 1, rock, no heat)."""
-    return "%d,%.17g,%.17g,%.17g,0,0,0,1,%d,0,0\n" % (i, x, y, z, body)
+    return "%d,%.17g,%.17g,%.17g,0,0,0,1,0.25,%d,0,0\n" % (i, x, y, z, body)
 
 
 def write_frame(folder, number, rows):
@@ -85,12 +85,12 @@ class RenderTest(unittest.TestCase):
         r0, r1 = row(0, 1, 2, 3, 0), row(1, 1, 2, 3, 0)
         bad = {
             "empty.csv": "",
-            "header.csv": "id,x,y,z,vx,vy,vz,mass,body,material,heet\n" + r0,
-            "columns.csv": H + "0,1,2,3,0,0,0,1,0,0\n",
+            "header.csv": "id,x,y,z,vx,vy,vz,mass,radius,body,material,heet\n" + r0,
+            "columns.csv": H + "0,1,2,3,0,0,0,1,0.25,0,0\n",
             "ids.csv": H + r0 + row(2, 1, 2, 3, 0),
-            "number.csv": H + "0,1,abc,3,0,0,0,1,0,0,0\n",
-            "body.csv": H + "0,1,2,3,0,0,0,1,0.5,0,0\n",
-            "material.csv": H + "0,1,2,3,0,0,0,1,0,0.5,0\n",
+            "number.csv": H + "0,1,abc,3,0,0,0,1,0.25,0,0,0\n",
+            "body.csv": H + "0,1,2,3,0,0,0,1,0.25,0.5,0,0\n",
+            "material.csv": H + "0,1,2,3,0,0,0,1,0.25,0,0.5,0\n",
             # Rejected by read_frame too: a hand-edited frame should fail, not render.
             "comment.csv": H + "# edited\n" + r0,
             "blank_middle.csv": H + r0 + "\n" + r1,
@@ -103,11 +103,16 @@ class RenderTest(unittest.TestCase):
             self.assertIn(name, str(caught.exception))  # the message says which file
 
     def test_old_frames_say_to_rerun(self):
-        path = self.write_text("old.csv", "id,x,y,z,body\n0,1,2,3,0\n")
-        with self.assertRaises(ValueError) as caught:
-            render.load_frame(path)
-        self.assertIn("rerun planet_sim", str(caught.exception))
-        self.assertIn("old.csv", str(caught.exception))
+        old = {"old.csv": ("id,x,y,z,body\n0,1,2,3,0\n", "#50"),
+               "no_radius.csv": ("id,x,y,z,vx,vy,vz,mass,body,material,heat\n"
+                                 "0,1,2,3,0,0,0,1,0,0,0\n", "#49")}
+        for name, (text, change) in old.items():
+            path = self.write_text(name, text)
+            with self.assertRaises(ValueError) as caught:
+                render.load_frame(path)
+            self.assertIn("rerun planet_sim", str(caught.exception))
+            self.assertIn(name, str(caught.exception))
+            self.assertIn(change, str(caught.exception))
 
     def test_frames_sorted_by_number(self):
         for n in [100000, 2, 99999, 10]:

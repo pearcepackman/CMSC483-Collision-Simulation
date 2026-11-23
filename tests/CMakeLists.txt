@@ -192,5 +192,64 @@ if(ENABLE_VIEWER)
     endif()
     add_cli_test(Viewer.Help 0 PROGRAM planet_view
         ARGS --help
-        OUTPUT "keys: 1/2/3 serial/OpenMP/HIP")
+        OUTPUT "keys: 1/2/3 serial/OpenMP/HIP.*replay keys")
+
+    # Replay and export (#49). Named Viewer.* so CI's viewer job (ctest -R '^Viewer\.')
+    # runs them. The checked-in one-frame run is a real replay folder.
+    set(replay_run ${CMAKE_SOURCE_DIR}/scripts/testdata/relaxed_layered_500)
+    add_cli_test(Viewer.ReplayMissingFolder 1 PROGRAM planet_view
+        ARGS --replay ${CMAKE_CURRENT_BINARY_DIR}/no_such_run
+        OUTPUT "no_such_run' is not a folder")
+    add_cli_test(Viewer.ReplayFolderWithoutFrames 1 PROGRAM planet_view
+        ARGS --replay ${CMAKE_SOURCE_DIR}/configs
+        OUTPUT "no frame_\\*.csv files in")
+    add_cli_test(Viewer.ReplayRejectsConfig 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --config ${CMAKE_SOURCE_DIR}/configs/smoke.cfg
+        OUTPUT "--config doesn't apply to --replay")
+    add_cli_test(Viewer.ReplayRejectsBackend 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --backend serial
+        OUTPUT "--backend doesn't apply to --replay")
+    add_cli_test(Viewer.ReplayMissingValue 1 PROGRAM planet_view
+        ARGS --replay
+        OUTPUT "--replay needs a folder")
+    add_cli_test(Viewer.ExportNeedsReplay 1 PROGRAM planet_view
+        ARGS --scenario cloud --export ${CMAKE_CURRENT_BINARY_DIR}/export_must_not_exist
+        OUTPUT "need --replay"
+        MUST_NOT_EXIST ${CMAKE_CURRENT_BINARY_DIR}/export_must_not_exist)
+    add_cli_test(Viewer.ReplaySpeedNeedsReplay 1 PROGRAM planet_view
+        ARGS --scenario cloud --speed 2
+        OUTPUT "need --replay")
+    add_cli_test(Viewer.ReplayExportFlagsNeedExport 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --fps 30
+        OUTPUT "--fps, --size and --orbit set up --export")
+    add_cli_test(Viewer.ExportRejectsBadSize 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --size 1920
+        OUTPUT "--size needs WxH with each side 16 to 7680")
+    add_cli_test(Viewer.ExportRejectsTinySize 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --size 8x8
+        OUTPUT "--size needs WxH with each side 16 to 7680")
+    add_cli_test(Viewer.ExportRejectsBadFps 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --fps 0
+        OUTPUT "--fps needs a number above 0, at most 1000, got '0'")
+    add_cli_test(Viewer.ReplayRejectsBadSpeed 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --speed -1
+        OUTPUT "--speed needs a number above 0, got '-1'")
+    add_cli_test(Viewer.ExportRejectsBadOrbit 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --orbit 99999
+        OUTPUT "--orbit needs degrees from -3600 to 3600")
+    # All the export flags parse; the non-empty folder (made here, in the build tree, so a
+    # broken check can't write into the sources) then stops it.
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/export_not_empty/keep.txt "an earlier export\n")
+    add_cli_test(Viewer.ExportRefusesNonEmptyFolder 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --export ${CMAKE_CURRENT_BINARY_DIR}/export_not_empty
+             --speed 2 --fps 30 --size 640x360 --orbit 10
+        OUTPUT "folder '[^']*export_not_empty' already exists and isn't empty")
+    add_cli_test(Viewer.ExportRejectsWindowFlags 1 PROGRAM planet_view
+        ARGS --replay ${replay_run} --export ${CMAKE_CURRENT_BINARY_DIR}/export_must_not_exist
+             --frames 10
+        OUTPUT "--frames and --screenshot are for the window"
+        MUST_NOT_EXIST ${CMAKE_CURRENT_BINARY_DIR}/export_must_not_exist)
+    add_cli_test(Viewer.ReplayFlagAsFolder 1 PROGRAM planet_view
+        ARGS --replay --speed 2
+        OUTPUT "--replay needs a folder, got '--speed'")
 endif()

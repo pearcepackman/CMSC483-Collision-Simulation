@@ -63,15 +63,16 @@ void expect_same_frame(const Particles &a, const Particles &b) {
         EXPECT_TRUE(same_bits(a.vy[i], b.vy[i])) << "vy of particle " << i;
         EXPECT_TRUE(same_bits(a.vz[i], b.vz[i])) << "vz of particle " << i;
         EXPECT_TRUE(same_bits(a.mass[i], b.mass[i])) << "mass of particle " << i;
+        EXPECT_TRUE(same_bits(a.radius[i], b.radius[i])) << "radius of particle " << i;
         EXPECT_TRUE(same_bits(a.heat[i], b.heat[i])) << "heat of particle " << i;
         EXPECT_EQ(a.body[i], b.body[i]) << "body of particle " << i;
         EXPECT_EQ(a.material[i], b.material[i]) << "material of particle " << i;
     }
 }
 
-// The header since #50, and a one-particle row in it: id,x,y,z,vx,vy,vz,mass,body,
+// The header since #49 (radius added to #50's): id,x,y,z,vx,vy,vz,mass,radius,body,
 // material,heat.
-const std::string H = "id,x,y,z,vx,vy,vz,mass,body,material,heat\n";
+const std::string H = "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat\n";
 
 } // namespace
 
@@ -92,15 +93,14 @@ TEST(Io, WriteThenReadGivesSameValues) {
         p.mass[i] = values[(i + 2) % 6];
         p.heat[i] = values[(i + 4) % 6];
         p.material[i] = static_cast<int>(i % 2);
-        p.radius[i] = 9.0; // not in the frame: must read back as zero
-        p.ax[i] = 9.0;
+        p.radius[i] = values[(i + 3) % 6]; // in the frame since #49
+        p.ax[i] = 9.0;                     // not in the frame: must read back as zero
     }
     ASSERT_TRUE(write_frame(p, dir.c_str(), 7));
     Particles q;
     ASSERT_TRUE(read_frame((dir + "/frame_00007.csv").c_str(), q));
     expect_same_frame(p, q);
     for (std::size_t i = 0; i < q.size(); ++i) {
-        EXPECT_EQ(q.radius[i], 0.0);
         EXPECT_EQ(q.ax[i], 0.0);
     }
 
@@ -141,10 +141,11 @@ TEST(Io, FileStartsWithHeader) {
     p.resize(2);
     p.x[1] = 0.5;
     p.body[1] = 1;
+    p.radius[0] = p.radius[1] = 0.25; // exact in binary, so %.17g prints "0.25"
     ASSERT_TRUE(write_frame(p, dir.c_str(), 0));
     // \n line endings on every OS (no \r), so Python and diff see the same file.
     EXPECT_EQ(read_text(dir + "/frame_00000.csv"),
-              H + "0,0,0,0,0,0,0,0,0,0,0\n1,0.5,0,0,0,0,0,0,1,0,0\n");
+              H + "0,0,0,0,0,0,0,0,0.25,0,0,0\n1,0.5,0,0,0,0,0,0,0.25,1,0,0\n");
 }
 
 TEST(Io, NoParticlesWritesHeaderOnly) {
@@ -205,31 +206,32 @@ TEST(Io, WriteReportsDiskFull) {
 TEST(Io, ReadRejectsMalformed) {
     const std::string dir = fresh_dir();
     const std::string path = dir + "/bad.csv";
-    // One 532-character row: 20 characters, then a heat field of 491 zeros running into
+    // One 537-character row: 25 characters, then a heat field of 486 zeros running into
     // what looks like a second row. Cut at the reader's 512-byte line buffer (511
     // characters) it would read as two valid rows, ids 0 and 1, so this checks the
     // reader rejects overlong lines instead of splitting them.
     const std::string long_line =
-        H + "0,1,2,3,0,0,0,1,0,0," + std::string(491, '0') + "1,1,2,3,0,0,0,1,0,0,0\n";
-    const std::string row0 = "0,1,2,3,0,0,0,1,0,0,0\n";
+        H + "0,1,2,3,0,0,0,1,0.05,0,0," + std::string(486, '0') + "1,1,2,3,0,0,0,1,0.05,0,0,0\n";
+    const std::string row0 = "0,1,2,3,0,0,0,1,0.05,0,0,0\n";
     const std::string nul = std::string(1, '\0');
     const std::string bad[] = {
-        "",                                                   // empty file
-        "id,x,y,z,body\n0,1,2,3,0\n",                         // the format before #50
+        "",                           // empty file
+        "id,x,y,z,body\n0,1,2,3,0\n", // the format before #50
+        "id,x,y,z,vx,vy,vz,mass,body,material,heat\n0,1,2,3,0,0,0,1,0,0,0\n", // #50, no radius
         "id,x,y,z,vx,vy,vz,mass,body,material,heet\n" + row0, // wrong header, valid row
-        H + "0,1,2,3,0,0,0,1,0,0\n",                          // missing column
-        H + "0,1,2,3,0,0,0,1,0,0,0,9\n",                      // extra column
-        H + "0,1,abc,3,0,0,0,1,0,0,0\n",                      // not a number
-        H + "0,1,2,3,0,0,0,1,0.5,0,0\n",                      // body is not a whole number
-        H + "0,1,2,3,0,0,0,1,0,1.5,0\n",                      // material is not a whole number
-        H + "0,1,2,3,0,0,0,1,99999999999,0,0\n",              // body doesn't fit in an int
-        H + "0,1,2,3,0,0,0,1,0,0,hot\n",                      // heat is not a number
-        H + "0,1,2,3,0,0,0,1,0a,0,0\n",                       // junk after body
-        H + "0,1,2,3,0,0,0,1,0,1x,0\n",                       // junk after material
-        H + "0,1,2,3,0,0,0,1,0,0,2x\n",                       // junk after heat
-        H + "0,1,2,3,0,0,0,1,,0,0\n",                         // empty body
-        H + row0 + "2,1,2,3,0,0,0,1,0,0,0\n",                 // ids skip 1
-        H + "1,1,2,3,0,0,0,1,0,0,0\n",                        // ids don't start at 0
+        H + "0,1,2,3,0,0,0,1,0.05,0,0\n",                     // missing column
+        H + "0,1,2,3,0,0,0,1,0.05,0,0,0,9\n",                 // extra column
+        H + "0,1,abc,3,0,0,0,1,0.05,0,0,0\n",                 // not a number
+        H + "0,1,2,3,0,0,0,1,0.05,0.5,0,0\n",                 // body is not a whole number
+        H + "0,1,2,3,0,0,0,1,0.05,0,1.5,0\n",                 // material is not a whole number
+        H + "0,1,2,3,0,0,0,1,0.05,99999999999,0,0\n",         // body doesn't fit in an int
+        H + "0,1,2,3,0,0,0,1,0.05,0,0,hot\n",                 // heat is not a number
+        H + "0,1,2,3,0,0,0,1,0.05,0a,0,0\n",                  // junk after body
+        H + "0,1,2,3,0,0,0,1,0.05,0,1x,0\n",                  // junk after material
+        H + "0,1,2,3,0,0,0,1,0.05,0,0,2x\n",                  // junk after heat
+        H + "0,1,2,3,0,0,0,1,0.05,,0,0\n",                    // empty body
+        H + row0 + "2,1,2,3,0,0,0,1,0.05,0,0,0\n",            // ids skip 1
+        H + "1,1,2,3,0,0,0,1,0.05,0,0,0\n",                   // ids don't start at 0
         H + "\n" + row0,                                      // blank line before the last row
         H + row0 + "\n\n",                                    // more than one blank line at the end
         long_line,                                            // longer than any real row
@@ -254,7 +256,7 @@ TEST(Io, ReadRejectsMalformed) {
 TEST(Io, ReadAcceptsEditorEndings) {
     const std::string dir = fresh_dir();
     const std::string path = dir + "/edited.csv";
-    const std::string rows = "0,1.5,-2,3,0,0,0,1,1,1,0\n1,0,0,0,0,0,0,1,0,0,0";
+    const std::string rows = "0,1.5,-2,3,0,0,0,1,0.05,1,1,0\n1,0,0,0,0,0,0,1,0.05,0,0,0";
     const std::string good[] = {
         H + rows,          // no newline after the last row
         H + rows + "\n\n", // one blank line at the end
@@ -275,7 +277,7 @@ TEST(Io, ReadAcceptsEditorEndings) {
 TEST(Io, ReadAcceptsNegativeAndSignedFields) {
     const std::string dir = fresh_dir();
     const std::string path = dir + "/signed.csv";
-    write_text(path, H + "0,-1.5,+2,-3e-3,0,0,-0.25,1,-1,-1,-0\n");
+    write_text(path, H + "0,-1.5,+2,-3e-3,0,0,-0.25,1,0.05,-1,-1,-0\n");
     Particles p;
     ASSERT_TRUE(read_frame(path.c_str(), p));
     ASSERT_EQ(p.size(), 1u);
@@ -291,8 +293,8 @@ TEST(Io, ReadAcceptsNegativeAndSignedFields) {
 TEST(Io, ReadAcceptsCrlf) {
     const std::string dir = fresh_dir();
     const std::string path = dir + "/crlf.csv";
-    write_text(path, "id,x,y,z,vx,vy,vz,mass,body,material,heat\r\n"
-                     "0,1.5,-2,3,0.25,0,0,1,1,1,2\r\n1,0,0,0,0,0,0,1,0,0,0\r\n");
+    write_text(path, "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat\r\n"
+                     "0,1.5,-2,3,0.25,0,0,1,0.05,1,1,2\r\n1,0,0,0,0,0,0,1,0.05,0,0,0\r\n");
     Particles p;
     ASSERT_TRUE(read_frame(path.c_str(), p));
     ASSERT_EQ(p.size(), 2u);

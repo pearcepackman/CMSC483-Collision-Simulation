@@ -14,7 +14,7 @@ import analyze_impact as ai  # noqa: E402
 from render import read_frame  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HEADER = "id,x,y,z,vx,vy,vz,mass,body,material,heat\n"
+HEADER = "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat\n"
 
 
 def ball(n, radius, seed, center=(0, 0, 0)):
@@ -53,7 +53,7 @@ def write_frame(folder, number, frame):
         f.write(HEADER)
         for i in range(len(frame["mass"])):
             x, v = frame["x"][i], frame["v"][i]
-            f.write("%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%d,0\n" % (
+            f.write("%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0.05,%d,%d,0\n" % (
                 i, x[0], x[1], x[2], v[0], v[1], v[2], frame["mass"][i], frame["body"][i],
                 frame["material"][i]))
     return path
