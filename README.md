@@ -33,7 +33,7 @@ The first plan ran in milestones M0 to M6 plus the viewer. On Nov 20 we re-plann
 | M0 to M2: build, CI, serial physics, first collision | Done: gravity, leapfrog, planets with relaxation, soft-sphere contact with heat, scenario files, frame output and video, an energy log that counts every term, conservation tests and a CI smoke collision |
 | Parallel backends so far | Done: OpenMP gravity (~6x on 6 cores), grid contact (33x faster than all pairs at 32k particles), a first GPU kernel, and the live viewer with serial/OpenMP/GPU switching |
 | F1: Fast + measured (Nov 27) | In progress. Done: float + tiled GPU kernel with contact and heat in the kernel (1.1 ms per step at 4,000 particles vs 52.5 ms serial). Left: parallel grid contact with OpenMP, benchmark harness |
-| F2: Showpiece (Dec 6) | In progress. Done: layered planets with iron cores, the glow viewer with heat and material colors. Left: Theia-style impact, Barnes-Hut tree gravity, impact analysis, scaling plots, hero video |
+| F2: Showpiece (Dec 6) | In progress. Done: layered planets with iron cores, the glow viewer with heat and material colors, impact analysis (remnant, disk, escaping mass). Left: Theia-style impact, Barnes-Hut tree gravity, scaling plots, hero video |
 | F3: Presentation (Dec 10) | Not started: slides, final README and demo video, Q&A rehearsal |
 
 Full plan: [PLAN.md](PLAN.md).
@@ -84,6 +84,12 @@ Plot a run's energy log (kinetic, potential, heat, total, and the change in the 
 ```bash
 ./build/dev/planet_sim --config configs/head_on.cfg --out frames/head_on
 .venv/bin/python scripts/plot_energy.py frames/head_on/energy.csv -o energy.png [--title T] [--max-rise X]
+```
+
+Find where the mass went after an impact: the largest remnant, an orbiting debris disk, debris falling back, and escaping mass, split by iron/rock and by planet, plus a predicted moon mass. `--every k` also writes the split over time as a CSV and a plot; `--min-remnant F` exits 1 if the remnant holds less than fraction F of the mass:
+
+```bash
+.venv/bin/python scripts/analyze_impact.py frames/head_on [--frame N] [--every k -o out] [--min-remnant F]
 ```
 
 Measure the OpenMP speedup (release build, threads pinned to cores):

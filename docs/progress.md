@@ -199,3 +199,11 @@ The viewer now looks like the giant-impact simulations it is modeled on. Particl
 
 All three are the live viewer on the GPU at 60 fps (10,000 particles, 2.8 to 3.5 ms per step). Three details mattered. The picture is built in a texture with floating-point channels, because in ordinary 8-bit channels the many overlapping particles in a cold planet's core added up to white, which in this coloring means white-hot. Brightness is compressed in a way that keeps each color's hue, which is what lets the orange planet's core stay visible. And hot particles give off more light than cold ones, so the hottest flying debris glows white instead of a dull gray. Drawing 50,000 particles costs about 3 ms a frame, so the frame rate is set by the physics, not the drawing.
 
+
+## Nov 23: Where the mass goes (#67)
+
+The giant-impact papers don't stop at the video: they report how much of the mass ended up in the final planet, in an orbiting disk that could form a moon, or flying off into space. `scripts/analyze_impact.py` now does that for any run. It finds the largest remnant, follows every other particle's orbit around it, and splits the result by material and by which planet it came from. It also prints a predicted moon mass from the disk.
+
+![Mass fractions over time in the smash run](figures/fig_impact_smash.png)
+
+The smash run is a hit-and-run. The impactor (20% of the mass, green before t = 0.5 because it is on course to hit) strikes at t = 0.5. By the end 65.4% of the mass is in the remnant, 26.9% escapes (three quarters of the impactor and 15% of the target), and 7.7% is still falling back. Almost nothing is left in orbit, so no moon. The stripped mass is mostly rock, so the remnant ends up 41.4% iron against 32.4% for the two planets at the start, the same way the papers explain iron-rich planets like Mercury. The gentle head-on merger comes out at 99.95% remnant, a check that the method doesn't invent debris. Analyzing a 10,000-particle frame takes about half a second, and the plot above, 51 frames, 20 seconds. The Theia-style run (#33) is the one meant to leave a disk; its numbers go in the same table in docs/notes.md.
