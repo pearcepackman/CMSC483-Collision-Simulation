@@ -207,3 +207,9 @@ The giant-impact papers don't stop at the video: they report how much of the mas
 ![Mass fractions over time in the smash run](figures/fig_impact_smash.png)
 
 The smash run is a hit-and-run. The impactor (20% of the mass, green before t = 0.5 because it is on course to hit) strikes at t = 0.5. By the end 65.4% of the mass is in the remnant, 26.9% escapes (three quarters of the impactor and 15% of the target), and 7.7% is still falling back. Almost nothing is left in orbit, so no moon. The stripped mass is mostly rock, so the remnant ends up 41.4% iron against 32.4% for the two planets at the start, the same way the papers explain iron-rich planets like Mercury. The gentle head-on merger comes out at 99.95% remnant, a check that the method doesn't invent debris. Analyzing a 10,000-particle frame takes about half a second, and the plot above, 51 frames, 20 seconds. The Theia-style run (#33) is the one meant to leave a disk; its numbers go in the same table in docs/notes.md.
+
+## Nov 23: Replay and video export (#49)
+
+![The smash replayed from its recorded frames and exported as a video](media/viewer_smash_replay.gif)
+
+The viewer can now play back a recorded run instead of simulating it, and export the playback as a video. The smash run saves only 101 frames, which would play as a jerky 1.7-second flip-book. Replay fills in the moments between saved frames from each particle's position and velocity at both ends, so it plays as smooth slow motion. During the impact the filled-in positions are within 0.4 of a particle spacing of where the simulation really put them. This matters for parallel computing because the simulation and the picture no longer have to run at the same speed: a run too big to watch live (100,000 particles, or a slow CPU backend) can be computed once and then watched smoothly, and reading a 100,000-particle frame takes 63 ms. The GIF above is the smash exported at 1280x720 (201 images in 14.8 s) and shrunk for the README.

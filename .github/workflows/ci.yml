@@ -131,6 +131,37 @@ jobs:
             if grep -q "bloom disabled" viewer_$look.log; then echo "glow shaders failed"; exit 1; fi
           done
           python3 .github/ci/png_stats.py viewer_glow.png viewer_plain.png
+      # Replay and export (#49): the smoke collision recorded by planet_sim, played back
+      # in the viewer and rendered offscreen to images. smoke.cfg runs t = 0 to 1.2, so at
+      # --speed 0.6 and --fps 10 export must write 1.2 / 0.6 * 10 + 1 = 21 images. The
+      # checked-in one-frame run must export exactly 1.
+      - name: Replay a recorded run and export it to images on a virtual screen
+        run: |
+          ./build/viewer/planet_sim --config configs/smoke.cfg --out smoke
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./build/viewer/planet_view --replay smoke --frames 60 --screenshot viewer_replay.png \
+            2>&1 | tee replay.log
+          test "${PIPESTATUS[0]}" -eq 0 || { echo "planet_view --replay failed"; exit 1; }
+          if grep -q "bloom disabled" replay.log; then echo "glow shaders failed"; exit 1; fi
+          python3 .github/ci/png_stats.py viewer_replay.png viewer_plain.png
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./build/viewer/planet_view --replay smoke --export exported --size 320x200 --fps 10 \
+            --speed 0.6 2>&1 | tee export.log
+          test "${PIPESTATUS[0]}" -eq 0 || { echo "planet_view --export failed"; exit 1; }
+          said=$(sed -n 's/^wrote \([0-9]*\) image.*/\1/p' export.log)
+          got=$(ls exported/frame_*.png | wc -l)
+          echo "export said $said images and wrote $got"
+          # Separate checks: under bash -e a failing test before && doesn't stop the step.
+          test "$said" = 21 || { echo "export said '$said' images, want 21"; exit 1; }
+          test "$got" -eq 21 || { echo "export wrote $got images, want 21"; exit 1; }
+          # The planets move between the first and last image, so the pictures must differ
+          # (a replay stuck on one frame would write 21 copies of it).
+          if cmp -s exported/frame_00000.png exported/frame_00020.png; then
+            echo "the first and last exported images are identical"; exit 1
+          fi
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./build/viewer/planet_view --replay scripts/testdata/relaxed_layered_500 --export one
+          test "$(ls one/frame_*.png | wc -l)" -eq 1
       - name: A simulation that blows up must exit 2, as planet_sim does
         run: |
           set +e
@@ -145,6 +176,8 @@ jobs:
           path: |
             viewer_glow.png
             viewer_plain.png
+            viewer_replay.png
+            exported/frame_00010.png
           if-no-files-found: ignore
 
   # Quick-look render script (#11). Runs its unit tests, then renders real planet_sim

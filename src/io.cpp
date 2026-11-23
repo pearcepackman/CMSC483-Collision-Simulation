@@ -8,9 +8,10 @@
 #include <string>
 #include <utility>
 
-// Since #50 a frame holds everything the analysis (#67) and replay (#49) need, not just
-// positions: one format change instead of one per feature.
-static const char *FRAME_HEADER = "id,x,y,z,vx,vy,vz,mass,body,material,heat";
+// Since #50 a frame holds everything the analysis (#67) needs, not just positions, and
+// since #49 each particle's radius too, so the viewer's replay draws particles at their
+// real size.
+static const char *FRAME_HEADER = "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat";
 
 bool write_frame(const Particles &p, const char *dir, int frame) {
     if (dir == nullptr || frame < 0) {
@@ -26,9 +27,9 @@ bool write_frame(const Particles &p, const char *dir, int frame) {
     }
     std::fprintf(f, "%s\n", FRAME_HEADER);
     for (std::size_t i = 0; i < p.size(); ++i) {
-        std::fprintf(f, "%zu,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%d,%.17g\n", i, p.x[i],
-                     p.y[i], p.z[i], p.vx[i], p.vy[i], p.vz[i], p.mass[i], p.body[i], p.material[i],
-                     p.heat[i]);
+        std::fprintf(f, "%zu,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%d,%.17g\n", i,
+                     p.x[i], p.y[i], p.z[i], p.vx[i], p.vy[i], p.vz[i], p.mass[i], p.radius[i],
+                     p.body[i], p.material[i], p.heat[i]);
     }
     bool ok = std::ferror(f) == 0;
     if (std::fclose(f) != 0) { // fclose flushes, so a full disk often shows up here
@@ -63,7 +64,8 @@ static LineResult read_line(FILE *f, char *buf, int size) {
 // One parsed row of a frame.
 struct FrameRow {
     unsigned long long id = 0;
-    double x = 0.0, y = 0.0, z = 0.0, vx = 0.0, vy = 0.0, vz = 0.0, mass = 0.0, heat = 0.0;
+    double x = 0.0, y = 0.0, z = 0.0, vx = 0.0, vy = 0.0, vz = 0.0, mass = 0.0, radius = 0.0;
+    double heat = 0.0;
     int body = 0, material = 0;
 };
 
@@ -81,12 +83,12 @@ static bool parse_int_field(const char **s, char next, int *out) {
     return true;
 }
 
-// Parses one row "id,x,y,z,vx,vy,vz,mass,body,material,heat". Returns false unless the
-// whole line is exactly that.
+// Parses one row "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat". Returns false unless
+// the whole line is exactly that.
 static bool parse_row(const char *line, FrameRow *r) {
     int used = 0; // characters parsed so far
-    if (std::sscanf(line, "%llu,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%n", &r->id, &r->x, &r->y, &r->z,
-                    &r->vx, &r->vy, &r->vz, &r->mass, &used) != 8 ||
+    if (std::sscanf(line, "%llu,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%n", &r->id, &r->x, &r->y, &r->z,
+                    &r->vx, &r->vy, &r->vz, &r->mass, &r->radius, &used) != 9 ||
         used == 0) {
         return false;
     }
@@ -135,6 +137,7 @@ bool read_frame(const char *path, Particles &p) {
         q.vy[i] = row.vy;
         q.vz[i] = row.vz;
         q.mass[i] = row.mass;
+        q.radius[i] = row.radius;
         q.body[i] = row.body;
         q.material[i] = row.material;
         q.heat[i] = row.heat;

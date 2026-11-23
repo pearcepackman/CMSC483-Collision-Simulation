@@ -106,7 +106,9 @@ planet-collision/
 │   ├── forces.cpp           ← compute_accelerations: gravity, then contact
 │   ├── integrator.cpp       ← leapfrog
 │   ├── diagnostics.cpp      ← energy, momentum, angular momentum
-│   ├── io.cpp               ← write frames (CSV first, binary later)
+│   ├── io.cpp               ← write and read frames (CSV)
+│   ├── replay.cpp           ← replaying recorded frames: listing, timing, interpolation
+│   ├── look.cpp             ← the viewer's colors and sprite sizes
 │   └── util.cpp             ← not_implemented() for stubs
 ├── tests/                   ← every tests/*.cpp joins one CPU test binary
 │   ├── test_two_body.cpp
@@ -121,6 +123,8 @@ planet-collision/
 │   ├── test_render.py       ← its unit tests (python -m unittest discover scripts)
 │   ├── requirements.txt     ← pinned numpy, matplotlib, imageio-ffmpeg
 │   ├── plot_energy.py
+│   ├── analyze_impact.py    ← remnant, disk, reimpacting and escaping mass
+│   ├── make_video.py        ← planet_view --export images → MP4 / GIF
 │   └── bench.py             ← run benchmarks, make speedup graphs
 └── bench/
     ├── bench_gravity.cpp    ← times one gravity evaluation: serial vs OpenMP thread counts

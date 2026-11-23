@@ -17,10 +17,14 @@ import time
 import numpy as np
 
 # What planet_sim's write_frame() writes (src/io.cpp). Since #50 a frame also has
-# velocities, mass, material and heat; this script only needs positions and body.
-HEADER = "id,x,y,z,vx,vy,vz,mass,body,material,heat"
+# velocities, mass, material and heat, and since #49 radius; this script only needs
+# positions and body.
+HEADER = "id,x,y,z,vx,vy,vz,mass,radius,body,material,heat"
 COLUMNS = HEADER.split(",")
-OLD_HEADER = "id,x,y,z,body"  # frames written before #50
+OLD_HEADERS = {  # older formats, with the change that ended them
+    "id,x,y,z,body": "#50",
+    "id,x,y,z,vx,vy,vz,mass,body,material,heat": "#49",
+}
 FRAME_NAME = re.compile(r"^frame_(\d+)\.csv$")
 
 
@@ -44,16 +48,17 @@ def load_frame(path):
 
 def read_frame(path):
     """Reads one frame with every column: a dict with "x" and "v" ((n, 3) float arrays),
-    "mass" and "heat" ((n,) floats), "body" and "material" ((n,) ints). Non-finite
+    "mass", "radius" and "heat" ((n,) floats), "body" and "material" ((n,) ints). Non-finite
     numbers are passed through (a blown-up run still renders); callers that can't use
     them check for them. Raises ValueError, naming the file, if it isn't in
     write_frame()'s format."""
     with open(path, newline="") as f:
         header = f.readline().rstrip("\r\n")
         rows = f.read().splitlines()  # handles \n and \r\n
-    if header == OLD_HEADER:
+    if header in OLD_HEADERS:
         raise ValueError(f"{path}: written by planet_sim before the frame format changed "
-                         f"(#50); rerun planet_sim to get frames this script can read")
+                         f"({OLD_HEADERS[header]}); rerun planet_sim to get frames this "
+                         f"script can read")
     if header != HEADER:
         raise ValueError(f"{path}: expected header '{HEADER}', got '{header}'")
     if rows and rows[-1] == "":
@@ -80,12 +85,13 @@ def read_frame(path):
 
 
 def frame_dict(data):
-    """Splits a frame's (n, 11) array into named columns."""
+    """Splits a frame's (n, 12) array into named columns."""
     col = COLUMNS.index
     return {
         "x": data[:, 1:4],
         "v": data[:, 4:7],
         "mass": data[:, col("mass")],
+        "radius": data[:, col("radius")],
         "body": data[:, col("body")].astype(int),
         "material": data[:, col("material")].astype(int),
         "heat": data[:, col("heat")],

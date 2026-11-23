@@ -5,12 +5,16 @@
 // One thread does both: each frame runs simulation steps until a time budget is used
 // (always at least one step), then draws. A slow backend therefore makes the window
 // slow too, which is the point of the demo.
+//
+// --replay plays a recorded run (planet_sim --out) instead, with the same look, and
+// --export renders that replay offscreen to PNGs for a video (#49).
 
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <new>
 #include <string>
 #include <utility>
@@ -23,7 +27,9 @@
 #include "cli.hpp"
 #include "config.hpp"
 #include "gravity.hpp"
+#include "io.hpp"
 #include "look.hpp"
+#include "replay.hpp"
 #include "sim.hpp"
 
 namespace {
@@ -35,13 +41,32 @@ const char *viewer_usage() {
            "                   [--dt h] [--frames N] [--screenshot <file.png>]\n"
            "                   [--color heat|material|planet|speed|plain] [--no-bloom] [--trails]\n"
            "                   [--help]\n"
+           "       planet_view --replay <run folder> [--speed S] [--frames N] [--screenshot ...]\n"
+           "                   [--export <folder> [--fps F] [--size WxH] [--orbit DEG]]\n"
+           "                   [--color ...] [--no-bloom] [--trails]\n"
            "  --frames      quit after N frames (for scripted runs and CI); default: run "
            "until closed\n"
            "  --screenshot  save the last frame as a PNG when the viewer exits\n"
            "  --color       starting color mode (default heat: material, glowing where hot)\n"
+           "  --replay      play the frames planet_sim --out wrote, smoothly between saved "
+           "frames\n"
+           "  --speed       simulation time per second of replay or video (default: the whole "
+           "run in\n"
+           "                about 8 s, slower if frames are big to read)\n"
+           "  --export      render the replay offscreen to <folder>/frame_NNNNN.png, no window "
+           "needed;\n"
+           "                the folder must be new or empty (scripts/make_video.py makes the "
+           "video)\n"
+           "  --fps, --size, --orbit  export frame rate (default 60), image size (default "
+           "1920x1080),\n"
+           "                and how far the camera swings around over the video (default 40 "
+           "degrees)\n"
            "keys: 1/2/3 serial/OpenMP/HIP, p GPU float/double, c color, b bloom, t trails,\n"
            "      space pause, r restart, [ ] step time budget, drag to orbit, wheel to zoom\n"
-           "exit codes: 0 ok, 1 usage or setup error, 2 the simulation produced NaN/Inf\n";
+           "replay keys: space pause, left/right saved frame, up/down speed, home start\n"
+           "exit codes: 0 ok, 1 usage or setup error (or a replayed frame can't be read),\n"
+           "            2 the simulation produced NaN/Inf (or a replayed frame holds NaN/Inf or\n"
+           "            doesn't match the run)\n";
 }
 
 // Everything the window shows and changes. Plain struct, one instance in main().
@@ -72,6 +97,16 @@ struct Viewer {
     bool bloom = true;
     bool trails = false;
     LookScales scales{1.0, 0.5}; // fixed per scenario: set in setup()
+
+    // Replay (#49): showing recorded frames instead of simulating.
+    bool replaying = false;
+    ReplayRun run;
+    ReplayCache cache;   // the saved frames around replay_t
+    int replay_k = 0;    // the earlier frame of the pair shown
+    int replay_exit = 0; // set when a frame turns out broken: 2 NaN/Inf or mismatch, 1 unreadable
+    std::string replay_error; // what was wrong with it, printed when the viewer exits
+    double replay_t = 0.0;
+    double speed = 1.0; // replay time per real second
 };
 
 void show_notice(Viewer &v, const std::string &text) {
@@ -117,6 +152,87 @@ bool setup(Viewer &v, std::string *error) {
     return true;
 }
 
+// Replay time of saved frame k (frame k itself without energy.csv times).
+double frame_time(const ReplayRun &run, int k) {
+    return run.times.empty() ? static_cast<double>(k) : run.times[static_cast<std::size_t>(k)];
+}
+
+// Puts the run at replay_t into v.p (replay_cache_show) and remembers the exit code a
+// broken frame calls for: 2 for NaN/Inf or frames that don't match (as a simulation that
+// blows up), 1 for a file that can't be read.
+ReplayShow replay_show(Viewer &v, std::string *error) {
+    const ReplayShow r =
+        replay_cache_show(v.run, v.replay_t, &v.cache, read_frame, &v.p, &v.replay_k, error);
+    if (r == REPLAY_NOT_FINITE || r == REPLAY_MISMATCH) {
+        v.replay_exit = 2;
+        v.replay_error = *error;
+    } else if (r == REPLAY_READ_FAILED && v.replay_exit == 0) {
+        v.replay_exit = 1;
+        v.replay_error = *error;
+    }
+    return r;
+}
+
+// Opens a recorded run: frame 0 sets the color scales and the camera, as setup() does
+// for a live run. speed_flag > 0 is --speed; otherwise the whole run plays in about 8 s,
+// and for live replay slower if reading a frame is slow (big runs), so playback doesn't
+// fall behind. Export isn't real time, so it always gets the 8 s default.
+bool replay_setup(Viewer &v, const char *dir, double speed_flag, bool exporting,
+                  std::string *error) {
+    if (!replay_open(dir, &v.run, error)) {
+        return false;
+    }
+    v.replaying = true;
+    v.replay_t = replay_start(v.run);
+    const double read_start = omp_get_wtime();
+    if (replay_show(v, error) != REPLAY_OK) {
+        return false;
+    }
+    const double read_seconds = std::fmax(omp_get_wtime() - read_start, 1e-4);
+    v.scales = look_scales(v.p);
+    double r_max = 0.0;
+    for (std::size_t i = 0; i < v.p.size(); ++i) {
+        r_max = std::fmax(
+            r_max, std::sqrt(v.p.x[i] * v.p.x[i] + v.p.y[i] * v.p.y[i] + v.p.z[i] * v.p.z[i]));
+    }
+    v.dist = static_cast<float>(std::fmax(3.0 * r_max, 1.0));
+    const double duration = replay_end(v.run) - replay_start(v.run);
+    if (speed_flag > 0.0) {
+        v.speed = speed_flag;
+    } else if (duration > 0.0) {
+        v.speed = duration / 8.0;
+        if (!exporting) {
+            // Reading frames may take at most half of each second: at most
+            // 0.5 / read_seconds saved frames per second of replay.
+            const double frames_per_time = static_cast<double>(v.run.paths.size() - 1) / duration;
+            v.speed = std::fmin(v.speed, 0.5 / read_seconds / frames_per_time);
+        }
+    }
+    if (!(v.speed > 0.0) || !std::isfinite(v.speed)) {
+        v.speed = 1.0; // a one-frame run: nothing moves anyway
+    }
+    return true;
+}
+
+// Moves replay time on by the frame time (at most 1/30 s, so a slow frame read doesn't
+// jump replay past the frames it just loaded) and shows that moment.
+void replay_advance(Viewer &v) {
+    v.steps_last_frame = 0;
+    if (v.paused) {
+        return;
+    }
+    v.replay_t += std::fmin(static_cast<double>(GetFrameTime()), 1.0 / 30.0) * v.speed;
+    if (v.replay_t >= replay_end(v.run)) {
+        v.replay_t = replay_end(v.run);
+        v.paused = true; // the end: space starts again from the beginning
+    }
+    std::string error;
+    if (replay_show(v, &error) != REPLAY_OK) {
+        v.paused = true;
+        show_notice(v, error);
+    }
+}
+
 // Switches the gravity backend if this build and machine can run it.
 void switch_backend(Viewer &v, Backend b) {
     if (!backend_available(b)) {
@@ -141,28 +257,83 @@ void switch_backend(Viewer &v, Backend b) {
     show_notice(v, std::string("backend: ") + backend_name(b));
 }
 
+// Keys that only mean something in a replay: pause, scrub, speed, start.
+void handle_replay_keys(Viewer &v) {
+    if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_THREE) ||
+        IsKeyPressed(KEY_P)) {
+        show_notice(v, "replay: no simulation to switch (run planet_view --config ... for that)");
+    }
+    const double start = replay_start(v.run), end = replay_end(v.run);
+    bool moved = false;
+    if (IsKeyPressed(KEY_SPACE)) {
+        v.paused = !v.paused;
+        if (!v.paused && v.replay_t >= end) { // at the end: play again from the start
+            v.replay_t = start;
+            moved = true;
+        }
+    }
+    if (IsKeyPressed(KEY_HOME) || IsKeyPressed(KEY_R)) {
+        v.replay_t = start;
+        moved = true;
+    }
+    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_LEFT)) {
+        // To the next or previous saved frame, and pause there.
+        int k = 0;
+        double s = 0.0;
+        replay_locate(v.run, v.replay_t, &k, &s);
+        const int last = static_cast<int>(v.run.paths.size()) - 1;
+        if (IsKeyPressed(KEY_RIGHT)) {
+            k = std::min(k + 1, last);
+        } else if (s <= 0.0) { // on a saved frame: the one before (else this one)
+            k = std::max(k - 1, 0);
+        }
+        v.replay_t = frame_time(v.run, k);
+        v.paused = true;
+        moved = true;
+    }
+    if (IsKeyPressed(KEY_UP)) {
+        v.speed *= 1.5;
+        show_notice(v, TextFormat("speed %.3g", v.speed));
+    }
+    if (IsKeyPressed(KEY_DOWN)) {
+        v.speed /= 1.5;
+        show_notice(v, TextFormat("speed %.3g", v.speed));
+    }
+    if (moved) {
+        std::string error;
+        if (replay_show(v, &error) != REPLAY_OK) {
+            v.paused = true;
+            show_notice(v, error);
+        }
+    }
+}
+
 void handle_input(Viewer &v) {
-    if (IsKeyPressed(KEY_ONE)) {
+    if (v.replaying) {
+        handle_replay_keys(v); // the look and camera keys below work in a replay too
+    }
+    if (!v.replaying && IsKeyPressed(KEY_ONE)) {
         switch_backend(v, BACKEND_SERIAL);
     }
-    if (IsKeyPressed(KEY_TWO)) {
+    if (!v.replaying && IsKeyPressed(KEY_TWO)) {
         switch_backend(v, BACKEND_OMP);
     }
-    if (IsKeyPressed(KEY_THREE)) {
+    if (!v.replaying && IsKeyPressed(KEY_THREE)) {
         switch_backend(v, BACKEND_HIP);
     }
 #ifdef SIM_HAVE_HIP
-    if (IsKeyPressed(KEY_P)) { // GPU precision, live: the float-vs-double trade-off on screen
+    if (!v.replaying &&
+        IsKeyPressed(KEY_P)) { // GPU precision, live: the float-vs-double trade-off on screen
         hip_set_double(!hip_uses_double());
         v.ms_per_step = 0.0;
         v.frame_ms = 0.0;
         show_notice(v, std::string("GPU precision: ") + (hip_uses_double() ? "double" : "float"));
     }
 #endif
-    if (IsKeyPressed(KEY_SPACE) && !v.blew_up) {
+    if (!v.replaying && IsKeyPressed(KEY_SPACE) && !v.blew_up) {
         v.paused = !v.paused;
     }
-    if (IsKeyPressed(KEY_R)) {
+    if (!v.replaying && IsKeyPressed(KEY_R)) {
         std::string error;
         if (!setup(v, &error)) {
             show_notice(v, "restart failed: " + error);
@@ -181,10 +352,10 @@ void handle_input(Viewer &v) {
         v.trails = !v.trails;
         show_notice(v, v.trails ? "trails on" : "trails off");
     }
-    if (IsKeyPressed(KEY_LEFT_BRACKET)) {
+    if (!v.replaying && IsKeyPressed(KEY_LEFT_BRACKET)) {
         v.budget_ms = std::fmax(1.0, v.budget_ms / 1.5);
     }
-    if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
+    if (!v.replaying && IsKeyPressed(KEY_RIGHT_BRACKET)) {
         v.budget_ms = std::fmin(200.0, v.budget_ms * 1.5);
     }
     v.camera_moved = false;
@@ -199,8 +370,13 @@ void handle_input(Viewer &v) {
     v.camera_moved = v.camera_moved || wheel != 0.0f;
 }
 
-// Steps until the frame's time budget is used (at least one step).
+// Steps until the frame's time budget is used (at least one step); in a replay, moves
+// replay time on instead.
 void advance(Viewer &v) {
+    if (v.replaying) {
+        replay_advance(v);
+        return;
+    }
     v.steps_last_frame = 0;
     if (v.paused) {
         return;
@@ -404,12 +580,14 @@ void renderer_init(Renderer &r) {
     }
 }
 
-// (Re)creates the offscreen targets at the window's render size. Returns false while the
-// window is too small to draw into (e.g. minimized); the frame is then skipped. If the
-// float scene texture can't be made at all (a driver without half-float render targets),
-// it sets target_failed so the caller can stop with a message instead of showing black.
-bool renderer_fit(Renderer &r) {
-    const int w = GetRenderWidth(), h = GetRenderHeight();
+// (Re)creates the offscreen targets at the window's render size, or at w x h when given
+// (export renders at its own size, not the window's). Returns false while the window is
+// too small to draw into (e.g. minimized); the frame is then skipped. If the float scene
+// texture can't be made at all (a driver without half-float render targets), it sets
+// target_failed so the caller can stop with a message instead of showing black.
+bool renderer_fit(Renderer &r, int forced_w = 0, int forced_h = 0) {
+    const int w = forced_w > 0 ? forced_w : GetRenderWidth();
+    const int h = forced_h > 0 ? forced_h : GetRenderHeight();
     if (w < 2 || h < 2) {
         return false;
     }
@@ -547,7 +725,48 @@ void blur_pass(const Renderer &r, const RenderTexture2D &src, const RenderTextur
     EndTextureMode();
 }
 
+void draw_replay_hud(const Viewer &v, const Renderer &r) {
+    DrawRectangle(10, 10, 330, 158, Color{12, 14, 22, 200});
+    int y = 18;
+    const int line = 20;
+    DrawText(TextFormat("replay    frame %d / %zu", v.replay_k + 1, v.run.paths.size()), 20, y, 20,
+             Color{120, 200, 255, 255});
+    y += line + 4;
+    DrawText(TextFormat("particles %zu", v.p.size()), 20, y, 18, RAYWHITE);
+    y += line;
+    if (v.run.times.empty()) {
+        DrawText("no energy.csv: steps between frames", 20, y, 18, RAYWHITE);
+    } else {
+        DrawText(TextFormat("sim time  %.4g of %.4g", v.replay_t, replay_end(v.run)), 20, y, 18,
+                 RAYWHITE);
+    }
+    y += line;
+    DrawText(TextFormat("speed     %.3g sim time / s", v.speed), 20, y, 18, RAYWHITE);
+    y += line;
+    DrawText(TextFormat("fps       %.0f", v.frame_ms > 0.0 ? 1000.0 / v.frame_ms : 0.0), 20, y, 18,
+             RAYWHITE);
+    y += line;
+    DrawText(TextFormat("look      %s   bloom %s   trails %s", color_mode_name(v.color),
+                        v.bloom && r.shaders_ok ? "on" : "off", v.trails ? "on" : "off"),
+             20, y, 18, RAYWHITE);
+    if (v.paused) {
+        DrawText(v.replay_t >= replay_end(v.run) ? "end of the run (space plays again)"
+                                                 : "paused (space)",
+                 20, 180, 20, YELLOW);
+    }
+    if (omp_get_wtime() < v.notice_until) {
+        DrawText(v.notice.c_str(), 20, GetScreenHeight() - 60, 20, Color{255, 200, 120, 255});
+    }
+    DrawText("space pause   left/right frame   up/down speed   home start   c color   b bloom   "
+             "t trails   drag orbit   wheel zoom",
+             20, GetScreenHeight() - 30, 16, GRAY);
+}
+
 void draw_hud(const Viewer &v, const Renderer &r) {
+    if (v.replaying) {
+        draw_replay_hud(v, r);
+        return;
+    }
     char threads[16] = "GPU"; // the hip backend computes gravity on the GPU
     if (v.backend != BACKEND_HIP) {
         std::snprintf(threads, sizeof threads, "%d",
@@ -600,7 +819,9 @@ void draw_hud(const Viewer &v, const Renderer &r) {
              20, GetScreenHeight() - 30, 16, GRAY);
 }
 
-void draw(const Viewer &v, Renderer &r) {
+// The particles and bloom into the renderer's offscreen textures (already fit to size).
+// Returns whether bloom was drawn, for composite_to.
+bool render_scene(const Viewer &v, Renderer &r) {
     const float cp = std::cos(v.pitch), sp = std::sin(v.pitch);
     const float cy = std::cos(v.yaw), sy = std::sin(v.yaw);
     Camera3D cam{};
@@ -613,11 +834,6 @@ void draw(const Viewer &v, Renderer &r) {
     const Vector3 right{cy, 0.0f, -sy};
     const Vector3 up{-sp * sy, cp, -sp * cy};
 
-    if (!renderer_fit(r)) { // minimized: nothing to draw into
-        BeginDrawing();
-        EndDrawing();
-        return;
-    }
     const bool plain = v.color == COLOR_PLAIN;
     BeginTextureMode(r.scene);
     if (v.trails && !plain && !v.camera_moved) {
@@ -639,12 +855,14 @@ void draw(const Viewer &v, Renderer &r) {
         blur_pass(r, r.scene, r.bloom_a, Vector2{1.0f, 0.0f}, true);
         blur_pass(r, r.bloom_a, r.bloom_b, Vector2{0.0f, 1.0f}, false);
     }
+    return bloom;
+}
 
-    BeginDrawing();
-    ClearBackground(BACKGROUND);
+// The scene through the tone-map pass (plus bloom) into dst of whatever is being drawn
+// to: the screen, or export's image target.
+void composite_to(const Viewer &v, const Renderer &r, bool bloom, Rectangle dst) {
+    const bool plain = v.color == COLOR_PLAIN;
     const Rectangle src{0, 0, static_cast<float>(r.w), -static_cast<float>(r.h)};
-    const Rectangle dst{0, 0, static_cast<float>(GetScreenWidth()),
-                        static_cast<float>(GetScreenHeight())};
     if (r.shaders_ok) {
         const float exposure = EXPOSURE, strength = bloom ? BLOOM_STRENGTH : 0.0f;
         const int raw = plain ? 1 : 0;
@@ -660,6 +878,21 @@ void draw(const Viewer &v, Renderer &r) {
     } else {
         DrawTexturePro(r.scene.texture, src, dst, Vector2{0, 0}, 0.0f, WHITE);
     }
+}
+
+// One window frame: scene, composite to the screen, HUD.
+void draw(const Viewer &v, Renderer &r) {
+    if (!renderer_fit(r)) { // minimized: nothing to draw into
+        BeginDrawing();
+        EndDrawing();
+        return;
+    }
+    const bool bloom = render_scene(v, r);
+    BeginDrawing();
+    ClearBackground(BACKGROUND);
+    composite_to(v, r, bloom,
+                 Rectangle{0, 0, static_cast<float>(GetScreenWidth()),
+                           static_cast<float>(GetScreenHeight())});
     draw_hud(v, r);
     EndDrawing();
 }
@@ -671,7 +904,44 @@ struct ViewerFlags {
     ColorMode color = COLOR_HEAT;
     bool bloom = true;
     bool trails = false;
+    // Replay and export (#49).
+    std::string replay, export_dir;
+    double speed = 0.0; // 0: chosen from the run (replay_setup)
+    double fps = 60.0;
+    int width = 1920, height = 1080;
+    double orbit_degrees = 40.0;
+    bool has_fps = false, has_size = false, has_orbit = false, has_speed = false;
 };
+
+// A finite number with nothing after it, or false.
+bool parse_number(const char *s, double *out) {
+    char *end = nullptr;
+    errno = 0;
+    const double d = std::strtod(s, &end);
+    if (end == s || *end != '\0' || errno == ERANGE || !std::isfinite(d)) {
+        return false;
+    }
+    *out = d;
+    return true;
+}
+
+// "WxH" with each side a whole number from 16 to 7680.
+bool parse_size(const char *s, int *w, int *h) {
+    char *end = nullptr;
+    const long a = std::strtol(s, &end, 10);
+    if (end == s || (*end != 'x' && *end != 'X') || !(s[0] >= '0' && s[0] <= '9')) {
+        return false;
+    }
+    const char *rest = end + 1;
+    const long b = std::strtol(rest, &end, 10);
+    if (end == rest || *end != '\0' || !(rest[0] >= '0' && rest[0] <= '9') || a < 16 || a > 7680 ||
+        b < 16 || b > 7680) {
+        return false;
+    }
+    *w = static_cast<int>(a);
+    *h = static_cast<int>(b);
+    return true;
+}
 
 // Pulls the viewer-only flags out of argv, leaving the rest for parse_cli. Returns false
 // on a bad value, before any window opens.
@@ -689,12 +959,55 @@ bool take_viewer_flags(int argc, char **argv, std::vector<const char *> *rest, V
         const bool is_frames = std::strcmp(argv[i], "--frames") == 0;
         const bool is_shot = std::strcmp(argv[i], "--screenshot") == 0;
         const bool is_color = std::strcmp(argv[i], "--color") == 0;
-        if (!is_frames && !is_shot && !is_color) {
+        const char *flag = argv[i];
+        const bool is_replay_flag =
+            std::strcmp(flag, "--replay") == 0 || std::strcmp(flag, "--export") == 0 ||
+            std::strcmp(flag, "--speed") == 0 || std::strcmp(flag, "--fps") == 0 ||
+            std::strcmp(flag, "--size") == 0 || std::strcmp(flag, "--orbit") == 0;
+        if (!is_frames && !is_shot && !is_color && !is_replay_flag) {
             rest->push_back(argv[i]);
             continue;
         }
         const char *value = i + 1 < argc ? argv[i + 1] : "";
         ++i;
+        if (is_replay_flag) {
+            const std::string name = flag;
+            double d = 0.0;
+            if (name == "--replay" || name == "--export") {
+                if (value[0] == '\0' || std::strncmp(value, "--", 2) == 0) {
+                    *error = name + " needs a folder, got '" + value + "'";
+                    return false;
+                }
+                (name == "--replay" ? f->replay : f->export_dir) = value;
+            } else if (name == "--size") {
+                if (!parse_size(value, &f->width, &f->height)) {
+                    *error = std::string("--size needs WxH with each side 16 to 7680, e.g. "
+                                         "1920x1080, got '") +
+                             value + "'";
+                    return false;
+                }
+                f->has_size = true;
+            } else if (!parse_number(value, &d) ||
+                       (name == "--orbit" ? std::fabs(d) > 3600.0
+                                          : !(d > 0.0) || (name == "--fps" && d > 1000.0))) {
+                *error = name +
+                         (name == "--orbit" ? " needs degrees from -3600 to 3600"
+                          : name == "--fps" ? " needs a number above 0, at most 1000"
+                                            : " needs a number above 0") +
+                         ", got '" + value + "'";
+                return false;
+            } else if (name == "--speed") {
+                f->speed = d;
+                f->has_speed = true;
+            } else if (name == "--fps") {
+                f->fps = d;
+                f->has_fps = true;
+            } else {
+                f->orbit_degrees = d;
+                f->has_orbit = true;
+            }
+            continue;
+        }
         if (is_color) {
             if (!color_mode_from_name(value, &f->color)) {
                 *error =
@@ -726,6 +1039,133 @@ bool take_viewer_flags(int argc, char **argv, std::vector<const char *> *rest, V
     return true;
 }
 
+// Renders the replay offscreen to <export_dir>/frame_NNNNN.png: `count` images from the
+// first frame's time to the last at the replay speed, the camera swinging round by
+// --orbit degrees over the whole video. Returns the exit code: 0, 1 for a setup or write
+// failure, 2 for a frame with NaN/Inf or frames that don't match.
+int run_export(Viewer &v, Renderer &r, const ViewerFlags &f, long count) {
+    if (!r.shaders_ok) {
+        std::fprintf(stderr, "planet_view: the glow shaders failed to compile, so --export "
+                             "can't render the look; stopping\n");
+        return 1;
+    }
+    RenderTexture2D image = LoadRenderTexture(f.width, f.height); // 8-bit, what PNGs hold
+    if (image.id == 0) {
+        std::fprintf(stderr, "planet_view: couldn't make a %dx%d image to render into\n", f.width,
+                     f.height);
+        return 1;
+    }
+    const double t0 = replay_start(v.run), t1 = replay_end(v.run);
+    const float yaw0 = v.yaw;
+    const double orbit = f.orbit_degrees * 3.14159265358979323846 / 180.0;
+    v.trails = false; // trails depend on the frame time, which export doesn't have
+    const double started = omp_get_wtime();
+    int code = 0;
+    for (long i = 0; i < count; ++i) {
+        v.replay_t = export_time(i, t0, t1, v.speed, f.fps);
+        std::string error;
+        const ReplayShow shown = replay_show(v, &error);
+        if (shown != REPLAY_OK) {
+            std::fprintf(stderr, "planet_view: %s\n", error.c_str());
+            code = shown == REPLAY_READ_FAILED ? 1 : 2;
+            break;
+        }
+        const double turn =
+            count > 1 ? orbit * static_cast<double>(i) / static_cast<double>(count - 1) : 0.0;
+        v.yaw = yaw0 + static_cast<float>(turn);
+        if (!renderer_fit(r, f.width, f.height)) {
+            std::fprintf(stderr, "planet_view: this graphics driver can't render to a 16-bit "
+                                 "float texture, which the viewer needs; stopping\n");
+            code = 1;
+            break;
+        }
+        const bool bloom = render_scene(v, r);
+        BeginTextureMode(image);
+        ClearBackground(BACKGROUND);
+        composite_to(v, r, bloom,
+                     Rectangle{0, 0, static_cast<float>(f.width), static_cast<float>(f.height)});
+        EndTextureMode();
+        Image img = LoadImageFromTexture(image.texture);
+        ImageFlipVertical(&img); // render textures are stored upside down
+        char name[32];
+        std::snprintf(name, sizeof name, "/frame_%05ld.png", i);
+        const std::string path = f.export_dir + name;
+        const bool saved = ExportImage(img, path.c_str());
+        UnloadImage(img);
+        if (!saved) {
+            std::fprintf(stderr, "planet_view: couldn't write '%s'\n", path.c_str());
+            code = 1;
+            break;
+        }
+        if ((i + 1) * 10 / count != i * 10 / count) {
+            std::printf("export: %ld / %ld images\n", i + 1, count);
+            std::fflush(stdout);
+        }
+    }
+    UnloadRenderTexture(image);
+    if (code != 0) {
+        std::fprintf(stderr,
+                     "planet_view: export stopped; images written so far are in %s (remove it "
+                     "or pick a new folder before exporting again)\n",
+                     f.export_dir.c_str());
+    }
+    if (code == 0) {
+        std::printf("wrote %ld image%s (%dx%d) to %s in %.1f s\n", count, count == 1 ? "" : "s",
+                    f.width, f.height, f.export_dir.c_str(), omp_get_wtime() - started);
+    }
+    return code;
+}
+
+// Checks the replay and export flags and opens the run, before any window opens.
+// Returns false with a message on any problem.
+bool replay_from_flags(Viewer &v, const ViewerFlags &flags, const std::vector<const char *> &args,
+                       long *export_count, std::string *error) {
+    if (flags.export_dir.empty() && (flags.has_fps || flags.has_size || flags.has_orbit)) {
+        *error = "--fps, --size and --orbit set up --export";
+        return false;
+    }
+    if (!flags.export_dir.empty() && (flags.frames >= 0 || !flags.screenshot.empty())) {
+        *error = "--frames and --screenshot are for the window; --export writes every image "
+                 "itself";
+        return false;
+    }
+    if (args.size() > 1) { // args[0] is the program name
+        *error = std::string(args[1]) +
+                 " doesn't apply to --replay (a replay shows recorded frames and runs no "
+                 "simulation)";
+        return false;
+    }
+    if (!flags.export_dir.empty()) {
+        // Never overwrite an earlier export: the folder must be new or empty.
+        std::error_code ec;
+        const std::filesystem::path dir(flags.export_dir);
+        if (std::filesystem::exists(dir, ec) &&
+            (!std::filesystem::is_directory(dir, ec) || !std::filesystem::is_empty(dir, ec))) {
+            *error = "--export folder '" + flags.export_dir +
+                     "' already exists and isn't empty; give a new folder";
+            return false;
+        }
+    }
+    if (!replay_setup(v, flags.replay.c_str(), flags.speed, !flags.export_dir.empty(), error)) {
+        return false;
+    }
+    if (!flags.export_dir.empty()) {
+        *export_count =
+            export_frame_count(replay_start(v.run), replay_end(v.run), v.speed, flags.fps);
+        if (*export_count < 0) {
+            *error = "that --speed and --fps would make over 1,000,000 images";
+            return false;
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(flags.export_dir, ec);
+        if (ec) {
+            *error = "can't create '" + flags.export_dir + "': " + ec.message();
+            return false;
+        }
+    }
+    return true;
+}
+
 // The viewer's whole run, separated from main() so running out of memory for a huge --n
 // is reported cleanly (as in planet_sim).
 int run(int argc, char **argv) {
@@ -733,48 +1173,80 @@ int run(int argc, char **argv) {
     std::vector<const char *> args;
     ViewerFlags flags;
     std::string error;
-    if (!take_viewer_flags(argc, argv, &args, &flags, &error) ||
-        !parse_cli(static_cast<int>(args.size()), args.data(), &v.cli, &error)) {
+    if (!take_viewer_flags(argc, argv, &args, &flags, &error)) {
         std::fprintf(stderr, "planet_view: %s\n%s", error.c_str(), viewer_usage());
         return 1;
     }
-    if (v.cli.help) {
-        std::printf("%s", viewer_usage());
-        return 0;
+    for (std::size_t i = 1; i < args.size(); ++i) {
+        if (std::strcmp(args[i], "--help") == 0 || std::strcmp(args[i], "-h") == 0) {
+            std::printf("%s", viewer_usage());
+            return 0;
+        }
     }
-    if (!v.cli.out_dir.empty() || v.cli.bench || v.cli.has_steps || v.cli.has_output_every) {
+    const bool replaying = !flags.replay.empty();
+    if (!replaying && (!flags.export_dir.empty() || flags.has_speed || flags.has_fps ||
+                       flags.has_size || flags.has_orbit)) {
         std::fprintf(stderr,
-                     "planet_view: --out, --bench, --steps and --output-every are planet_sim "
-                     "flags; the viewer runs until you close it\n%s",
+                     "planet_view: --export, --speed, --fps, --size and --orbit need --replay "
+                     "<run folder>\n%s",
                      viewer_usage());
         return 1;
     }
-    v.backend = v.cli.backend;
     v.color = flags.color;
     v.bloom = flags.bloom;
     v.trails = flags.trails;
+    long export_count = 0;
+    if (replaying) {
+        if (!replay_from_flags(v, flags, args, &export_count, &error)) {
+            std::fprintf(stderr, "planet_view: %s\n", error.c_str());
+            return 1;
+        }
+    } else {
+        if (!parse_cli(static_cast<int>(args.size()), args.data(), &v.cli, &error)) {
+            std::fprintf(stderr, "planet_view: %s\n%s", error.c_str(), viewer_usage());
+            return 1;
+        }
+        if (!v.cli.out_dir.empty() || v.cli.bench || v.cli.has_steps || v.cli.has_output_every) {
+            std::fprintf(stderr,
+                         "planet_view: --out, --bench, --steps and --output-every are planet_sim "
+                         "flags; the viewer runs until you close it\n%s",
+                         viewer_usage());
+            return 1;
+        }
+        v.backend = v.cli.backend;
 #ifdef SIM_HAVE_HIP
-    hip_set_double(v.cli.gpu_double);
+        hip_set_double(v.cli.gpu_double);
+        if (v.backend == BACKEND_HIP) {
+            std::string info;
+            if (!hip_init(&info)) {
+                std::fprintf(stderr, "planet_view: --backend hip: %s\n", info.c_str());
+                return 1;
+            }
+        }
 #endif
-#ifdef SIM_HAVE_HIP
-    if (v.backend == BACKEND_HIP) {
-        std::string info;
-        if (!hip_init(&info)) {
-            std::fprintf(stderr, "planet_view: --backend hip: %s\n", info.c_str());
+        if (!setup(v, &error)) {
+            std::fprintf(stderr, "planet_view: %s\n", error.c_str());
             return 1;
         }
     }
-#endif
-    if (!setup(v, &error)) {
-        std::fprintf(stderr, "planet_view: %s\n", error.c_str());
-        return 1;
-    }
 
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(1280, 800, "planet_view");
+    const bool exporting = !flags.export_dir.empty();
+    // Export draws only offscreen, so its window stays hidden, and raylib's per-image log
+    // lines (two for every PNG) are turned down to warnings.
+    if (exporting) {
+        SetTraceLogLevel(LOG_WARNING);
+    }
+    SetConfigFlags(exporting ? FLAG_WINDOW_HIDDEN : (FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT));
+    InitWindow(exporting ? 320 : 1280, exporting ? 200 : 800, "planet_view");
     SetTargetFPS(60);
     Renderer r;
     renderer_init(r);
+    if (exporting) {
+        const int code = run_export(v, r, flags, export_count);
+        renderer_unload(r);
+        CloseWindow();
+        return code;
+    }
     if (!r.shaders_ok) {
         // Not fatal: particles still draw, just without bloom and brightness compression.
         std::fprintf(stderr, "planet_view: glow shaders failed to compile; bloom disabled\n");
@@ -814,6 +1286,10 @@ int run(int argc, char **argv) {
         std::fprintf(stderr, "planet_view: particle %zu became NaN/Inf at step %lld\n",
                      v.bad_particle, v.step);
         return 2;
+    }
+    if (v.replay_exit != 0) { // a replay that met a broken frame must not look like success
+        std::fprintf(stderr, "planet_view: %s\n", v.replay_error.c_str());
+        return v.replay_exit;
     }
     return 0;
 }

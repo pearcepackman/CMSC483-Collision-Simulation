@@ -6,7 +6,9 @@ Smash two particle-based planets together and use parallel computing to make an 
 
 Each planet is a ball of thousands of particles. Every timestep, every particle pulls on every other one (gravity), overlapping particles push apart and lose energy (soft-sphere contact), and a leapfrog integrator advances positions and velocities. The same simulation runs on three swappable backends, **serial**, **OpenMP** (CPU threads) and **HIP** (AMD GPU), so we can measure exactly how much each one speeds things up.
 
-![A quarter-mass planet hitting at three times escape speed, colored by heat, in the live viewer](docs/media/viewer_smash_debris_heat.png)
+![A quarter-mass planet hitting a layered planet at three times escape speed, colored by heat: a replay of the recorded run, exported from the viewer](docs/media/viewer_smash_replay.gif)
+
+*A planet a quarter of the target's mass hits at three times escape speed (10,000 particles on the GPU, `configs/smash.cfg`). Color shows heat from the impact, from dark red to white.*
 
 ## Results so far
 
@@ -24,6 +26,18 @@ OpenMP scales almost perfectly up to the 6 physical cores:
 
 The GPU computes gravity, contact and heat in one kernel in single precision (`--gpu-precision double` gives the exact reference). Single precision is what makes it fast: this card runs double about 13 times slower. The full history, with screenshots, is in [docs/progress.md](docs/progress.md).
 
+## What a collision looks like
+
+Each planet has an iron core inside a rock mantle, like the planets in giant-impact studies. Heat from contact friction makes debris glow, and `scripts/analyze_impact.py` measures where the mass ends up.
+
+| Before impact: iron cores in rock mantles | t = 0.9: the impact | t = 3.0: the debris jet |
+|---|---|---|
+| ![layers](docs/media/viewer_smash_layers_material.png) | ![impact](docs/media/viewer_smash_impact_heat.png) | ![debris](docs/media/viewer_smash_debris_heat.png) |
+
+![Where the mass goes in the smash: remnant, disk, reimpacting and escaping mass over time](docs/figures/fig_impact_smash.png)
+
+The smash is a hit-and-run: 65.4% of the mass ends up in one remnant, 26.9% escapes (three quarters of the impactor), and almost nothing stays in orbit, so no moon forms. The stripped mass is mostly rock, so the remnant ends up 41.4% iron against 32.4% for the two planets at the start.
+
 ## Status
 
 The first plan ran in milestones M0 to M6 plus the viewer. On Nov 20 we re-planned the last three weeks around what the project has to show: real speedups, a simulation that looks like the giant-impact studies, and the talk.
@@ -33,7 +47,7 @@ The first plan ran in milestones M0 to M6 plus the viewer. On Nov 20 we re-plann
 | M0 to M2: build, CI, serial physics, first collision | Done: gravity, leapfrog, planets with relaxation, soft-sphere contact with heat, scenario files, frame output and video, an energy log that counts every term, conservation tests and a CI smoke collision |
 | Parallel backends so far | Done: OpenMP gravity (~6x on 6 cores), grid contact (33x faster than all pairs at 32k particles), a first GPU kernel, and the live viewer with serial/OpenMP/GPU switching |
 | F1: Fast + measured (Nov 27) | In progress. Done: float + tiled GPU kernel with contact and heat in the kernel (1.1 ms per step at 4,000 particles vs 52.5 ms serial). Left: parallel grid contact with OpenMP, benchmark harness |
-| F2: Showpiece (Dec 6) | In progress. Done: layered planets with iron cores, the glow viewer with heat and material colors, impact analysis (remnant, disk, escaping mass). Left: Theia-style impact, Barnes-Hut tree gravity, scaling plots, hero video |
+| F2: Showpiece (Dec 6) | In progress. Done: layered planets with iron cores, the glow viewer with heat and material colors, impact analysis (remnant, disk, escaping mass), replay of recorded runs and video export. Left: Theia-style impact, Barnes-Hut tree gravity, scaling plots |
 | F3: Presentation (Dec 10) | Not started: slides, final README and demo video, Q&A rehearsal |
 
 Full plan: [PLAN.md](PLAN.md).
@@ -69,7 +83,7 @@ planet_sim --config configs/head_on.cfg --out frames/run       # planets from a 
 planet_sim --scenario cloud --n 10000 --backend omp --bench    # one "bench ..." timing line
 ```
 
-`--out` writes `frame_NNNNN.csv` files (`id,x,y,z,vx,vy,vz,mass,body,material,heat`, one row per particle) and `energy.csv` (`step,t,kinetic,potential,contact,heat,total,px,py,pz`, where `contact` is the energy held in compressed contact springs, `heat` is the energy contact damping has turned into heat, and `total` = kinetic + potential + contact + heat). Exit codes: 0 ok, 1 usage/setup error (including a bad config file), 2 the simulation produced NaN/Inf. Scenario files are `key = value` text; see [configs/head_on.cfg](configs/head_on.cfg) for every key.
+`--out` writes `frame_NNNNN.csv` files (`id,x,y,z,vx,vy,vz,mass,radius,body,material,heat`, one row per particle) and `energy.csv` (`step,t,kinetic,potential,contact,heat,total,px,py,pz`, where `contact` is the energy held in compressed contact springs, `heat` is the energy contact damping has turned into heat, and `total` = kinetic + potential + contact + heat). Exit codes: 0 ok, 1 usage/setup error (including a bad config file), 2 the simulation produced NaN/Inf. Scenario files are `key = value` text; see [configs/head_on.cfg](configs/head_on.cfg) for every key.
 
 Turn a run's frames into a video (a quick-look debug tool, colored by planet; ffmpeg comes with the pip packages):
 
@@ -122,6 +136,17 @@ cmake --preset demo && cmake --build --preset demo      # Release + GPU + viewer
 ```
 
 Keys: `1/2/3` backend, `p` GPU float/double, `c` color (heat, material, planet, speed, plain), `b` bloom, `t` trails, `space` pause, `r` restart, `[ ]` step time budget per frame (how long each frame simulates before drawing), drag to orbit, mouse wheel to zoom. `--frames N --screenshot out.png` runs N frames and saves the last one; `--color MODE`, `--no-bloom` and `--trails` set the look at start. Exit codes match `planet_sim`: 0 ok, 1 usage/setup error, 2 the simulation produced NaN/Inf.
+
+Replay a recorded run, smoothly between its saved frames, and turn it into a video. Runs too big to simulate live still play smoothly this way:
+
+```bash
+./build/demo/planet_sim --config configs/smash.cfg --backend hip --out frames/smash
+./build/demo/planet_view --replay frames/smash [--speed S]       # space, left/right, up/down, home
+./build/demo/planet_view --replay frames/smash --export out/smash --size 1920x1080 --fps 60 [--orbit 40]
+.venv/bin/python scripts/make_video.py out/smash smash.mp4 --fps 60 [--gif smash.gif --gif-width 560 --gif-fps 12]
+```
+
+`--speed` is simulation time per second (the default plays the whole run in about 8 s). `--export` renders offscreen into a new or empty folder with a slow camera orbit, no window needed. The GIF at the top was made this way at 1280x720, 30 fps and speed 0.6.
 
 ### Build presets
 
