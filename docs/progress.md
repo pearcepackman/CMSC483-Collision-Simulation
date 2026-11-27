@@ -213,3 +213,17 @@ The smash run is a hit-and-run. The impactor (20% of the mass, green before t = 
 ![The smash replayed from its recorded frames and exported as a video](media/viewer_smash_replay.gif)
 
 The viewer can now play back a recorded run instead of simulating it, and export the playback as a video. The smash run saves only 101 frames, which would play as a jerky 1.7-second flip-book. Replay fills in the moments between saved frames from each particle's position and velocity at both ends, so it plays as smooth slow motion. During the impact the filled-in positions are within 0.4 of a particle spacing of where the simulation really put them. This matters for parallel computing because the simulation and the picture no longer have to run at the same speed: a run too big to watch live (100,000 particles, or a slow CPU backend) can be computed once and then watched smoothly, and reading a 100,000-particle frame takes 63 ms. The GIF above is the smash exported at 1280x720 (201 images in 14.8 s) and shrunk for the README.
+
+## Nov 27: Media for the presentation
+
+Two more GIFs for the README and the slides, both exported from the replay of the smash run: the impact colored by material, and the first flat-square look next to the current glow look. The full-quality videos for the talk are 10-second 1080p60 exports in heat and material colors. They are not committed (video files stay out of git), but they come from these commands on any machine with the repo and a GPU build:
+
+```bash
+./build/demo/planet_sim --config configs/smash.cfg --backend hip --out frames/smash
+./build/demo/planet_view --replay frames/smash --export out/heat --size 1920x1080 --fps 60 --speed 0.4 --orbit 60
+./build/demo/planet_view --replay frames/smash --export out/material --size 1920x1080 --fps 60 --speed 0.4 --orbit 60 --color material
+.venv/bin/python scripts/make_video.py out/heat smash_heat_1080p60.mp4 --fps 60
+.venv/bin/python scripts/make_video.py out/material smash_material_1080p60.mp4 --fps 60
+```
+
+Each export is 601 images and takes about 75 s on the RX 9060 XT. The before/after GIF is two 640x360 exports at speed 0.6 (one with `--color plain --no-bloom`) put side by side with ffmpeg's `hstack` filter.

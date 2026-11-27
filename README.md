@@ -34,6 +34,14 @@ Each planet has an iron core inside a rock mantle, like the planets in giant-imp
 |---|---|---|
 | ![layers](docs/media/viewer_smash_layers_material.png) | ![impact](docs/media/viewer_smash_impact_heat.png) | ![debris](docs/media/viewer_smash_debris_heat.png) |
 
+The same impact colored by material: the target's tan rock mantle around its orange iron core, and the impactor's blue rock and pink iron spraying out.
+
+![The smash colored by material: iron cores and rock mantles of both planets](docs/media/viewer_smash_material.gif)
+
+How the viewer changed: the first version drew every particle as a flat square of one size. Now particles are glowing sprites at their real size, brighter where they overlap, and colored by heat.
+
+![The same replay in the first flat-square look and in the current glow look, side by side](docs/media/viewer_before_after.gif)
+
 ![Where the mass goes in the smash: remnant, disk, reimpacting and escaping mass over time](docs/figures/fig_impact_smash.png)
 
 The smash is a hit-and-run: 65.4% of the mass ends up in one remnant, 26.9% escapes (three quarters of the impactor), and almost nothing stays in orbit, so no moon forms. The stripped mass is mostly rock, so the remnant ends up 41.4% iron against 32.4% for the two planets at the start.
